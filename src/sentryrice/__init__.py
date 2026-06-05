@@ -7,5 +7,5 @@ The AI scoring layer is Claude-Code-native (see the bundled .claude templates).
 """
 from sentryrice.config import Config, load_config
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = ["Config", "load_config", "__version__"]

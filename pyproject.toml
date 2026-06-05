@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sentry-rice"
-version = "0.1.0"
+version = "0.1.1"
 description = "RICE-prioritise your Sentry issues, with AI scoring that traces each issue into your codebase (via Claude Code)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,7 +47,8 @@ sentryrice = [
     "web/static/*",
     "claude_templates/commands/*.md",
     "claude_templates/workflows/*.js",
-    "rubric.example.md",
+    "data/*.yaml",
+    "data/*.md",
 ]
 
 [tool.pytest.ini_options]

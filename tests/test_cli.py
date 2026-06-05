@@ -27,6 +27,22 @@ def test_render_claude_templates_substitutes_paths(config, config_path, tmp_path
     assert "sentry-rice" in reimport and "__RICE_BIN__" not in reimport
 
 
+def test_init_scaffolds_and_does_not_clobber(tmp_path):
+    from sentryrice.scaffold import init_project
+
+    written, skipped = init_project(str(tmp_path))
+    assert {os.path.basename(p) for p in written} == {"config.yaml", "rubric.md"}
+    assert (tmp_path / "config.yaml").exists() and (tmp_path / "rubric.md").exists()
+    assert "sentry:" in (tmp_path / "config.yaml").read_text()
+
+    # Re-running skips existing files (no clobber)…
+    written2, skipped2 = init_project(str(tmp_path))
+    assert written2 == [] and len(skipped2) == 2
+    # …unless --force.
+    written3, _ = init_project(str(tmp_path), force=True)
+    assert len(written3) == 2
+
+
 def test_cli_initdb_then_upsert_roundtrips(config_path, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("RICE_DB_PATH", str(tmp_path / "rice.db"))
     main(["--config", config_path, "initdb"])

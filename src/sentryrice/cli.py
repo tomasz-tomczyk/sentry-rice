@@ -2,6 +2,7 @@
 
 Config is discovered from --config, then $SENTRY_RICE_CONFIG, then ./config.yaml.
 
+    sentry-rice init [DEST]            scaffold a starter config.yaml + rubric.md
     sentry-rice initdb                 create/migrate the database
     sentry-rice sync [--days N]        pull Sentry, import new, prune, recompute
     sentry-rice serve [--port 5001]    run the web UI
@@ -29,6 +30,18 @@ def _resolve_config_path(arg):
 
 def _load(args):
     return load_config(_resolve_config_path(args.config))
+
+
+def cmd_init(args):
+    from sentryrice.scaffold import init_project
+    written, skipped = init_project(args.dest, force=args.force)
+    for p in written:
+        print(f"created {p}")
+    for p in skipped:
+        print(f"skipped {p} (exists — use --force to overwrite)")
+    if written:
+        print("\nNext: edit config.yaml (sentry.org, projects, categories, "
+              "codebase_path), then run `sentry-rice sync`.")
 
 
 def cmd_initdb(args):
@@ -85,6 +98,11 @@ def build_parser():
     p = argparse.ArgumentParser(prog="sentry-rice", description="RICE-prioritise your Sentry issues.")
     p.add_argument("--config", help="path to config.yaml (default: $SENTRY_RICE_CONFIG or ./config.yaml)")
     sub = p.add_subparsers(dest="command", required=True)
+
+    s = sub.add_parser("init", help="scaffold a starter config.yaml + rubric.md")
+    s.add_argument("dest", nargs="?", default=".", help="target dir (default: cwd)")
+    s.add_argument("--force", action="store_true", help="overwrite existing files")
+    s.set_defaults(func=cmd_init)
 
     sub.add_parser("initdb", help="create/migrate the database").set_defaults(func=cmd_initdb)
 

@@ -54,11 +54,9 @@ Pull engine updates later with `pip install -U sentry-rice` — no fork to maint
 ## Quickstart
 
 ```bash
-# 1. Install, then grab the example config + rubric to start from
+# 1. Install + scaffold a starter config.yaml + rubric.md
 pip install sentry-rice
-curl -O https://raw.githubusercontent.com/tomasz-tomczyk/sentry-rice/main/config.example.yaml
-curl -O https://raw.githubusercontent.com/tomasz-tomczyk/sentry-rice/main/rubric.example.md
-mv config.example.yaml config.yaml && mv rubric.example.md rubric.md
+sentry-rice init
 $EDITOR config.yaml      # set sentry.org, projects, categories, codebase_path
 
 # 2. Pull issues from Sentry (creates the DB, imports, scores reach/RICE)
@@ -102,7 +100,7 @@ JSON to `sentry-rice upsert`, or via the override form in the UI.
 
 ## Configuration
 
-A single YAML file. See [`config.example.yaml`](config.example.yaml) for the full
+A single YAML file. See [`config.example.yaml`](src/sentryrice/data/config.example.yaml) for the full
 annotated schema. The shape:
 
 | Section | What it sets |
@@ -117,6 +115,7 @@ annotated schema. The shape:
 ## CLI
 
 ```
+sentry-rice init [DEST]            scaffold a starter config.yaml + rubric.md
 sentry-rice initdb                 create / migrate the database
 sentry-rice sync [--days N]        pull Sentry, import new, prune stale, recompute
 sentry-rice serve [--port 5001]    run the web UI
