@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sentry-rice"
-version = "0.1.1"
+version = "0.1.2"
 description = "RICE-prioritise your Sentry issues, with AI scoring that traces each issue into your codebase (via Claude Code)."
 readme = "README.md"
 requires-python = ">=3.11"
