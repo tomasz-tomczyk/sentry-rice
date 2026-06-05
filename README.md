@@ -1,5 +1,9 @@
 # sentry-rice
 
+[![PyPI](https://img.shields.io/pypi/v/sentry-rice.svg)](https://pypi.org/project/sentry-rice/)
+[![Python](https://img.shields.io/pypi/pyversions/sentry-rice.svg)](https://pypi.org/project/sentry-rice/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **RICE-prioritise your Sentry issues — with AI scoring that traces each issue
 into your codebase.** Every issue gets one number, so the stuff actually worth
 fixing floats to the top. Browse it in a Sentry-styled web UI; override anything
@@ -38,25 +42,23 @@ Keep your own small repo with just your config, rubric, and `.claude/` scoring
 commands; install the engine as a dependency and pull updates with a version bump
 instead of a fork-merge. (Fork only if you want to change the engine itself.)
 
-Since it isn't published to a package index, install from a local clone:
+Install it from PyPI:
 
 ```bash
-git clone <this repo> ~/Server/side/sentry-rice
-
-# in YOUR project repo:
 python -m venv .venv && source .venv/bin/activate
-pip install -e ~/Server/side/sentry-rice      # editable: engine updates as you pull
+pip install sentry-rice
 ```
 
-Once you host it on a private remote, `pip install "git+ssh://…/sentry-rice.git"`
-works too.
+Pull engine updates later with `pip install -U sentry-rice` — no fork to maintain.
 
 ## Quickstart
 
 ```bash
-# 1. Configure
-cp ~/Server/side/sentry-rice/config.example.yaml config.yaml
-cp ~/Server/side/sentry-rice/rubric.example.md   rubric.md
+# 1. Install, then grab the example config + rubric to start from
+pip install sentry-rice
+curl -O https://raw.githubusercontent.com/tomasz-tomczyk/sentry-rice/main/config.example.yaml
+curl -O https://raw.githubusercontent.com/tomasz-tomczyk/sentry-rice/main/rubric.example.md
+mv config.example.yaml config.yaml && mv rubric.example.md rubric.md
 $EDITOR config.yaml      # set sentry.org, projects, categories, codebase_path
 
 # 2. Pull issues from Sentry (creates the DB, imports, scores reach/RICE)
