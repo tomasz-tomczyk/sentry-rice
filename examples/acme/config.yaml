@@ -1,0 +1,69 @@
+# Acme Cloud — a worked example of a sentry-rice deployment.
+# Acme is a fictional B2B SaaS; every value here is made up. Copy this, swap in
+# your real org/projects/categories, and point codebase_path at your repo.
+
+project:
+  name: "Acme Cloud"
+  codebase_path: ~/code/acme        # where the scoring agents trace (your repo)
+  rubric_file: rubric.md
+
+sentry:
+  org: acme-cloud
+  region_url: https://us.sentry.io
+  projects:
+    "401001": backend     # Acme's API service
+    "401002": web         # the dashboard SPA
+    "401003": worker      # background jobs
+  environments:
+    - { query: production, store: production }
+    - { query: staging,    store: staging }
+    - { query: dev,        store: dev }
+  prod_environments: [production]
+
+thresholds:
+  sync_days: 7
+  min_events:
+    production: 50    # high-traffic prod: skip one-offs
+    staging: 0        # low-traffic: import everything
+    dev: 0
+  reference_floor: 10
+  recency_decay:
+    - [3, 1.0]
+    - [7, 0.9]
+    - [14, 0.6]
+    - [30, 0.5]
+    - [60, 0.25]
+    - [180, 0.1]
+  rice_bands: { high: 40, medium: 15 }
+
+# Impact categories for a generic SaaS, highest harm to lowest.
+categories:
+  data_integrity: { score: 10, icon: database,      color: '#FF5C8A' }   # data loss / corruption
+  security:       { score: 9,  icon: shield-alert,  color: '#FF7738' }   # auth, authz, exposure
+  payments:       { score: 8,  icon: credit-card,   color: '#FFB454' }   # checkout, billing, subscriptions
+  core_workflow:  { score: 7,  icon: workflow,      color: '#4DC771' }   # the primary product flow
+  integrations:   { score: 6,  icon: cable,         color: '#5C9DFF' }   # webhooks, third-party APIs
+  account:        { score: 5,  icon: users,         color: '#62D2C3' }   # signup, profile, settings
+  ui_display:     { score: 4,  icon: monitor,       color: '#A396DA' }   # cosmetic / render-only
+  reporting:      { score: 3,  icon: bar-chart-3,   color: '#7BD389' }   # dashboards, exports
+  other:          { score: 2,  icon: shapes,        color: '#9AA0AA' }   # a real bug that fits nothing above
+  noise:          { score: 1,  icon: volume-x,      color: '#6E6480' }   # expected / transient / non-actionable
+
+ui:
+  fix_prompt_template: |
+    Investigate Sentry issue {sentry_id} ({url}).
+
+    App: {app}. Confirm the root cause in the code and fix it with tests. Treat the
+    assessment below as a hint and validate it independently:
+    - Category: {impact_category} (impact {impact})
+    - Reach {reach} · Confidence {confidence} · Effort {effort}
+    - Users {user_count} · Events {event_count} · Last seen {last_seen}
+
+    Reasoning:
+    {reasoning}
+
+    Codebase findings (validate, don't trust):
+    {code_findings}
+
+db:
+  path: db/rice.db

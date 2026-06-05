@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}About RICE — RICE Scorer{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+
+  <div class="text-center mb-3">
+    <h2 class="text-4xl sm:text-5xl font-extrabold text-sentry-text tracking-tight">How issues get ranked</h2>
+    <p class="text-lg text-sentry-text2 mt-3">Every Sentry issue gets one <span class="text-sentry-purplelt font-semibold">RICE</span> score, so the worst stuff floats to the top.</p>
+  </div>
+
+  <!-- The formula, as a real fraction -->
+  <div class="bg-sentry-surface rounded-2xl border border-sentry-border p-8 sm:p-10 my-8 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.8)]">
+    <div class="flex items-center justify-center gap-5 sm:gap-8 flex-wrap">
+      <div class="text-5xl sm:text-6xl font-extrabold text-sentry-purplelt tracking-tight">RICE</div>
+      <div class="text-5xl sm:text-6xl text-sentry-muted font-light">=</div>
+
+      <!-- fraction -->
+      <div class="inline-flex flex-col items-center">
+        <!-- numerator -->
+        <div class="flex items-center gap-3 sm:gap-4 pb-3">
+          {% set num = [
+            ('megaphone', 'Reach', 'rgba(108,95,199,0.18)', '#A396DA', 'rgba(108,95,199,0.45)'),
+            ('zap', 'Impact', 'rgba(255,119,56,0.16)', '#FF9E6B', 'rgba(255,119,56,0.45)'),
+            ('target', 'Confidence', 'rgba(77,199,113,0.16)', '#6BD894', 'rgba(77,199,113,0.45)'),
+          ] %}
+          {% for icon, label, bg, fg, bd in num %}
+            <span class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl text-lg sm:text-xl font-semibold border"
+                  style="background:{{ bg }};color:{{ fg }};border-color:{{ bd }};">
+              <i data-lucide="{{ icon }}" class="w-5 h-5 sm:w-6 sm:h-6"></i>{{ label }}
+            </span>
+            {% if not loop.last %}<span class="text-2xl sm:text-3xl text-sentry-muted font-light">×</span>{% endif %}
+          {% endfor %}
+        </div>
+        <!-- fraction bar -->
+        <div class="h-1 w-full rounded-full bg-gradient-to-r from-sentry-purple via-sentry-flamepink to-sentry-flameorng"></div>
+        <!-- denominator -->
+        <div class="pt-3">
+          <span class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-lg sm:text-xl font-semibold border"
+                style="background:rgba(92,157,255,0.16);color:#8FBCFF;border-color:rgba(92,157,255,0.45);">
+            <i data-lucide="wrench" class="w-5 h-5 sm:w-6 sm:h-6"></i>Effort
+          </span>
+        </div>
+      </div>
+    </div>
+    <p class="text-center text-base text-sentry-text2 mt-7 max-w-2xl mx-auto">
+      Big reach × high impact × high confidence, divided by how hard it is to fix.
+      <span class="text-sentry-muted">Reach &amp; the final score are computed deterministically; impact, confidence &amp; effort come from the AI reading the actual code.</span>
+    </p>
+  </div>
+
+  <!-- Dimensions as cards -->
+  <div class="grid sm:grid-cols-2 gap-5 mb-8">
+    {% set dims = [
+      ('megaphone', 'Reach', '#A396DA', 'rgba(108,95,199,0.4)', 'How many users hit it <strong class="text-sentry-text font-semibold">recently</strong>. Recent volume × a recency decay — an issue not seen in weeks fades toward 0. Reach is <strong class="text-sentry-text font-semibold">relative to the busiest issue in the same environment</strong>, so every environment is judged on its own scale. <strong class="text-sentry-text font-semibold">Background jobs report 0 users</strong>, so their <strong class="text-sentry-text font-semibold">event count</strong> stands in as the volume.'),
+      ('zap', 'Impact', '#FF9E6B', 'rgba(255,119,56,0.4)', 'What <strong class="text-sentry-text font-semibold">kind</strong> of thing is broken — fixed by category, set in your config from highest to lowest.'),
+      ('target', 'Confidence', '#6BD894', 'rgba(77,199,113,0.4)', 'How sure the AI is after tracing the code. Higher when it pinpoints the exact failing line, lower when it can only find the general area.'),
+      ('wrench', 'Effort', '#8FBCFF', 'rgba(92,157,255,0.4)', 'Fix complexity from the code: <strong class="text-sentry-text font-semibold">2</strong> = one-line guard, <strong class="text-sentry-text font-semibold">5</strong> = a module, <strong class="text-sentry-text font-semibold">8+</strong> = migration / multi-service. Min 0.5.'),
+    ] %}
+    {% for icon, label, fg, bd, desc in dims %}
+    <div class="bg-sentry-surface rounded-xl border p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.8)]" style="border-color:{{ bd }};">
+      <div class="flex items-center gap-3 mb-2">
+        <i data-lucide="{{ icon }}" class="w-7 h-7" style="color:{{ fg }};"></i>
+        <span class="text-xl font-bold" style="color:{{ fg }};">{{ label }}</span>
+      </div>
+      <p class="text-base text-sentry-text2 leading-relaxed">{{ desc | safe }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Impact categories as a heat-bar chart (driven by your config) -->
+  <div class="bg-sentry-surface rounded-xl border border-sentry-border p-6 sm:p-7 mb-8 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.8)]">
+    <h3 class="text-2xl font-bold text-sentry-text mb-1">Impact by category</h3>
+    <p class="text-base text-sentry-text2 mb-5">The AI maps each issue to the category it actually harms. Higher = worse when it breaks. These come from your <code class="bg-sentry-elevated text-sentry-text2 px-1.5 py-0.5 rounded font-mono text-sm">config.yaml</code>.</p>
+    <div class="space-y-2">
+      {% for cat, score in categories %}
+      {% set cm = cat_meta.get(cat, ['shapes', '#9AA0AA']) %}
+      <div class="flex items-center gap-4">
+        <div class="w-40 shrink-0 flex justify-end">
+          <span class="inline-flex items-center gap-1.5 font-mono text-sm px-2 py-0.5 rounded border whitespace-nowrap"
+                style="background:{{ cm[1] }}22;color:{{ cm[1] }};border-color:{{ cm[1] }}55;">
+            <i data-lucide="{{ cm[0] }}" class="w-3.5 h-3.5"></i>{{ cat }}
+          </span>
+        </div>
+        <div class="flex-1 h-8 rounded-lg bg-sentry-bg/60 overflow-hidden">
+          <div class="h-full rounded-lg flex items-center justify-end pr-2.5"
+               style="width: {{ (score / 10 * 100) }}%; background: linear-gradient(90deg, {{ cm[1] }}33, {{ cm[1] }}cc);">
+            <span class="text-sm font-bold tabular-nums font-mono" style="color:#fff;">{{ score }}</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Overrides callout -->
+  <div class="bg-sentry-surface rounded-xl border border-sentry-border p-6 sm:p-7 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.8)]">
+    <h3 class="flex items-center gap-2.5 text-2xl font-bold text-sentry-text mb-2">
+      <i data-lucide="pencil" class="w-6 h-6 text-sentry-purplelt"></i> Override anything, anytime
+    </h3>
+    <p class="text-base text-sentry-text2 leading-relaxed">
+      Disagree with a score? Click a row and edit any dimension. Your value drives the
+      <em class="text-sentry-text not-italic font-semibold">effective RICE</em>, but the AI's original is kept — every change lands in the
+      <a href="/disagreements" class="text-sentry-purplelt hover:text-sentry-text underline-offset-2 hover:underline">Disagreements</a>
+      log, which is the training signal for sharpening future scoring.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

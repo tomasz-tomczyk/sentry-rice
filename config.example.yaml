@@ -1,0 +1,67 @@
+# sentry-rice configuration — copy to config.yaml and edit.
+# Everything an opinionated deployment would hardcode lives here.
+
+project:
+  name: "My Project"
+  # Absolute path to the codebase the AI scoring agents trace into (Grep/Glob/Read).
+  codebase_path: /absolute/path/to/your/repo
+  # Scoring rubric (Markdown), relative to this config file. See rubric.example.md.
+  rubric_file: rubric.md
+
+sentry:
+  org: your-org-slug
+  region_url: https://us.sentry.io
+  # Sentry numeric project id -> a short app label used to tag issues.
+  projects:
+    "123456": api
+    "123457": web
+  # Each Sentry environment you pull, mapped to a stored env name. Several Sentry
+  # spellings can fold into one stored env (e.g. prod + production -> production).
+  environments:
+    - { query: production, store: production }
+    - { query: prod,       store: production }
+    - { query: staging,    store: staging }
+    - { query: dev,        store: dev }
+  # Stored envs treated as production (default view + badge styling).
+  prod_environments: [production, prod]
+
+thresholds:
+  sync_days: 7
+  # Per-stored-env import floor on event count. High-traffic prod gets a floor so
+  # we don't import every one-off; low-traffic envs import everything (0).
+  min_events:
+    production: 100
+    staging: 0
+    dev: 0
+  # Guards against a near-empty dataset making its one issue an automatic 10.
+  reference_floor: 10
+  # Reach recency decay: [max_age_days, factor]; first match wins, older -> 0.
+  recency_decay:
+    - [3, 1.0]
+    - [7, 0.9]
+    - [14, 0.6]
+    - [30, 0.5]
+    - [60, 0.25]
+    - [180, 0.1]
+  # RICE colour bands in the table: >= high is red, >= medium is amber, else green.
+  rice_bands: { high: 40, medium: 15 }
+
+# Impact categories: name -> fixed impact score (0–10) + UI presentation.
+# Order high to low; `noise` (1) and `other` (3) are conventional catch-alls.
+categories:
+  critical:    { score: 10, icon: heart-pulse,  color: '#F55459' }
+  security:    { score: 9,  icon: shield-alert,  color: '#FF7738' }
+  data:        { score: 9,  icon: database,      color: '#FF5C8A' }
+  billing:     { score: 8,  icon: credit-card,   color: '#FFB454' }
+  integrations:{ score: 6,  icon: cable,         color: '#5C9DFF' }
+  ui_display:  { score: 5,  icon: monitor,       color: '#A396DA' }
+  reporting:   { score: 4,  icon: bar-chart-3,   color: '#7BD389' }
+  other:       { score: 3,  icon: shapes,        color: '#9AA0AA' }
+  noise:       { score: 1,  icon: volume-x,      color: '#6E6480' }
+
+# db:
+#   path: ./db/rice.db    # default: <config dir>/db/rice.db; or set RICE_DB_PATH
+
+# ui:
+#   fix_prompt_template: |   # optional; {sentry_id} {url} {app} {impact_category} … interpolated
+#     Investigate {sentry_id} ({url}) ...

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <title>{% block title %}RICE Scorer{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sentry: {
+              bg:       '#161022',
+              nav:      '#1A1027',
+              surface:  '#1E1729',
+              elevated: '#2A2233',
+              border:   'rgba(255,255,255,0.08)',
+              borderlt: 'rgba(255,255,255,0.12)',
+              text:     '#EBE5F0',
+              text2:    '#A79EB4',
+              muted:    '#6E6480',
+              purple:   '#6C5FC7',
+              purplelt: '#A396DA',
+              flamepink:'#FF45A8',
+              flameorng:'#FF7738',
+              red:      '#F55459',
+              amber:    '#F5B000',
+              green:    '#4DC771',
+              /* legacy aliases kept so any stray classes don't break */
+              dark:     '#1A1027',
+              mid:      '#1E1729',
+              orange:   '#FF7738',
+            }
+          },
+          fontFamily: {
+            sans: ['Rubik', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['ui-monospace', "'Roboto Mono'", 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* Bump the base size ~20% (rem-based Tailwind sizes scale with it) — reads like 120% zoom. */
+    html { font-size: 120%; }
+    body { font-family: 'Rubik', ui-sans-serif, system-ui, sans-serif; }
+    /* Rendered Markdown (AI reasoning / codebase findings) */
+    .md > :first-child { margin-top: 0; }
+    .md > :last-child { margin-bottom: 0; }
+    .md p { margin: 0 0 0.5rem; }
+    .md ul { list-style: disc; padding-left: 1.25rem; margin: 0.35rem 0; }
+    .md ol { list-style: decimal; padding-left: 1.25rem; margin: 0.35rem 0; }
+    .md li { margin: 0.15rem 0; }
+    .md strong { color: #EBE5F0; font-weight: 600; }
+    .md a { color: #A396DA; text-decoration: underline; }
+    .md code {
+      font-family: ui-monospace, 'Roboto Mono', monospace;
+      background: rgba(255,255,255,0.07);
+      padding: 1px 5px; border-radius: 4px;
+      font-size: 0.9em; color: #C9C2D6;
+    }
+    .md pre {
+      background: rgba(0,0,0,0.35); padding: 0.6rem 0.75rem;
+      border-radius: 6px; overflow-x: auto; margin: 0.45rem 0;
+    }
+    .md pre code { background: none; padding: 0; }
+    .md h1, .md h2, .md h3 { font-weight: 600; color: #EBE5F0; margin: 0.5rem 0 0.25rem; font-size: 0.98rem; }
+    /* Tame number-input spinners against dark fills */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { opacity: 0.35; }
+    /* Subtle scrollbar */
+    ::-webkit-scrollbar { height: 10px; width: 10px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::selection { background: rgba(108,95,199,0.40); color: #EBE5F0; }
+  </style>
+</head>
+<body class="bg-sentry-bg min-h-screen text-sentry-text antialiased">
+
+  <!-- Top nav -->
+  <nav class="bg-sentry-nav border-b border-sentry-border px-6 py-3 flex items-center gap-3">
+    <span class="flame-mark flex items-center justify-center w-7 h-7 rounded-md text-white text-base font-bold shadow-[0_2px_10px_rgba(255,71,168,0.35)]"
+          style="background:linear-gradient(135deg,#FF45A8 0%,#FF7738 100%);">⬡</span>
+    <span class="font-semibold text-[15px] tracking-tight text-sentry-text">RICE Scorer</span>
+    <span class="text-sentry-muted text-sm">/ {{ project_name }}</span>
+  </nav>
+
+  <!-- Tab bar -->
+  <div class="bg-sentry-nav border-b border-sentry-border px-6">
+    <div class="flex">
+      <a href="/"
+         class="px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors
+                {% if request.path == '/' %}text-sentry-text border-sentry-purplelt{% else %}text-sentry-text2 border-transparent hover:text-sentry-text{% endif %}">
+        Issues
+      </a>
+      <a href="/disagreements"
+         class="px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors
+                {% if request.path == '/disagreements' %}text-sentry-text border-sentry-purplelt{% else %}text-sentry-text2 border-transparent hover:text-sentry-text{% endif %}">
+        Disagreements
+      </a>
+      <a href="/about"
+         class="px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors
+                {% if request.path == '/about' %}text-sentry-text border-sentry-purplelt{% else %}text-sentry-text2 border-transparent hover:text-sentry-text{% endif %}">
+        About RICE
+      </a>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <main class="px-6 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Render any Lucide icons (<i data-lucide="name">) on the page.
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.lucide) lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

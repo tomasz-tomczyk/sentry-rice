@@ -1,0 +1,578 @@
+{% extends "base.html" %}
+{% block title %}Issues — RICE Scorer{% endblock %}
+
+{% block content %}
+{# Toggle the per-dimension heat colouring (R/I/C/E). Set to false to undo. #}
+{% set COLOR_SCORES = true %}
+
+{# ── Live filter bar ──────────────────────────────────────────────────────────
+   Stays a real GET <form> so it works (and deep-links) without JS — the server
+   filters identically. JS enhances it: typing/toggling debounces a ?partial=1
+   fetch and swaps the results in place. Anything that changes the result set
+   carries data-filter so the JS can serialise + chip it. #}
+
+<form id="filter-form" method="get" action="/"
+      class="mb-5 bg-sentry-surface rounded-xl border border-sentry-border px-4 py-4 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset,0_8px_24px_-12px_rgba(0,0,0,0.6)]">
+  <input type="hidden" name="sort" value="{{ sort }}">
+  <input type="hidden" name="order" value="{{ order }}">
+
+  <div class="flex flex-wrap items-center gap-3">
+    <!-- Search (primary) -->
+    <div class="relative flex-1 min-w-56">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sentry-muted pointer-events-none"
+           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input id="search-input" type="search" name="q" data-filter placeholder="Search issues by title or ID…" value="{{ search }}"
+             aria-label="Search issues by title or ID"
+             class="w-full bg-sentry-bg border border-sentry-border rounded-lg pl-9 pr-3 py-2 text-base text-sentry-text placeholder-sentry-muted
+                    focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+    </div>
+
+    <!-- Environment segmented toggle (Production is the default group) -->
+    {# Jinja for-loops are block-scoped, so accumulate non-prod envs via a namespace. #}
+    {% set ns = namespace(envs=[('prod', 'Production'), ('all', 'All')]) %}
+    {% for e in environments %}{% if (e or '')|lower not in ['production', 'prod'] %}
+      {% set ns.envs = ns.envs + [(e, e|capitalize)] %}
+    {% endif %}{% endfor %}
+    <div role="radiogroup" aria-label="Environment"
+         class="inline-flex items-center rounded-lg border border-sentry-border bg-sentry-bg p-0.5">
+      {% for value, label in ns.envs %}
+      <label class="cursor-pointer">
+        <input type="radio" name="env" value="{{ value }}" data-filter class="peer sr-only" {% if env == value %}checked{% endif %}>
+        <span class="block px-3 py-1.5 rounded-md text-sm font-medium text-sentry-text2 transition-colors
+                     peer-checked:bg-sentry-purple peer-checked:text-white peer-checked:shadow-[0_2px_8px_-2px_rgba(108,95,199,0.6)]
+                     hover:text-sentry-text">{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <!-- New-only toggle (issues first imported by the most recent scan) -->
+    <label class="cursor-pointer" title="Show only issues first imported by the most recent scan">
+      <input type="checkbox" name="new" value="1" data-filter class="peer sr-only" {% if new_only %}checked{% endif %}>
+      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-sentry-border bg-sentry-bg text-sm font-medium text-sentry-text2 transition-colors
+                   peer-checked:bg-sentry-purple peer-checked:text-white peer-checked:border-sentry-purple peer-checked:shadow-[0_2px_8px_-2px_rgba(108,95,199,0.6)]
+                   hover:text-sentry-text">
+        <i data-lucide="sparkles" class="w-4 h-4"></i>New
+      </span>
+    </label>
+
+    <!-- App select -->
+    <select name="app" data-filter aria-label="App"
+            class="bg-sentry-bg border border-sentry-border rounded-lg px-3 py-2 text-sm text-sentry-text
+                   focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+      <option value="all" {% if not app_filter or app_filter == 'all' %}selected{% endif %}>All apps</option>
+      {% for a in apps %}
+      <option value="{{ a }}" {% if app_filter == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+
+    <!-- Category popover (color dots + icons) -->
+    <div class="relative" data-popover>
+      {% set active_cm = cat_meta.get(cat_filter) %}
+      <button type="button" data-popover-toggle aria-haspopup="true" aria-expanded="false"
+              class="inline-flex items-center gap-2 bg-sentry-bg border border-sentry-border rounded-lg px-3 py-2 text-sm text-sentry-text
+                     hover:border-sentry-borderlt focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+        {% if cat_filter and cat_filter != 'all' and active_cm %}
+          <span class="w-2 h-2 rounded-full" style="background:{{ active_cm[1] }};"></span>
+          <span>{{ cat_filter }}</span>
+        {% else %}
+          <i data-lucide="shapes" class="w-4 h-4 text-sentry-muted"></i>
+          <span class="text-sentry-text2">All categories</span>
+        {% endif %}
+        <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-sentry-muted"></i>
+      </button>
+      <select name="cat" data-filter class="sr-only" aria-hidden="true" tabindex="-1">
+        <option value="all" {% if not cat_filter or cat_filter == 'all' %}selected{% endif %}>All categories</option>
+        {% for c in category_list %}
+        <option value="{{ c }}" {% if cat_filter == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+      <div data-popover-panel
+           class="hidden absolute z-30 mt-1.5 w-60 max-h-80 overflow-y-auto rounded-lg border border-sentry-borderlt bg-sentry-elevated p-1.5 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]">
+        <button type="button" data-cat-option="all"
+                class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm text-left text-sentry-text2 hover:bg-sentry-surface transition-colors
+                       {{ 'bg-sentry-purple/10 text-sentry-text' if not cat_filter or cat_filter == 'all' else '' }}">
+          <i data-lucide="shapes" class="w-4 h-4 text-sentry-muted"></i>All categories
+        </button>
+        {% for c in category_list %}
+        {% set cm = cat_meta.get(c, ['shapes', '#9AA0AA']) %}
+        <button type="button" data-cat-option="{{ c }}"
+                class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm text-left text-sentry-text2 hover:bg-sentry-surface transition-colors
+                       {{ 'bg-sentry-purple/10 text-sentry-text' if cat_filter == c else '' }}">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background:{{ cm[1] }};"></span>
+          <i data-lucide="{{ cm[0] }}" class="w-4 h-4 shrink-0" style="color:{{ cm[1] }};"></i>
+          <span class="truncate">{{ c }}</span>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Advanced numeric filters popover -->
+    {% set num_active = filters.get('min_reach') or filters.get('max_reach') or filters.get('min_impact') or filters.get('max_impact') or filters.get('min_rice') %}
+    <div class="relative" data-popover>
+      <button type="button" data-popover-toggle aria-haspopup="true" aria-expanded="false"
+              class="inline-flex items-center gap-2 bg-sentry-bg border rounded-lg px-3 py-2 text-sm transition-colors
+                     focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40
+                     {{ 'border-sentry-purple text-sentry-purplelt' if num_active else 'border-sentry-border text-sentry-text2 hover:border-sentry-borderlt' }}">
+        <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+        <span>Advanced</span>
+        {% if num_active %}<span class="w-1.5 h-1.5 rounded-full bg-sentry-flameorng"></span>{% endif %}
+      </button>
+      <div data-popover-panel
+           class="hidden absolute right-0 z-30 mt-1.5 w-72 rounded-lg border border-sentry-borderlt bg-sentry-elevated p-3 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]">
+        {% set num_rows = [
+          ('Reach', 'min_reach', 'max_reach'),
+          ('Impact', 'min_impact', 'max_impact'),
+        ] %}
+        <div class="space-y-3">
+          {% for label, lo, hi in num_rows %}
+          <div>
+            <div class="text-xs font-semibold text-sentry-muted uppercase tracking-wide mb-1.5">{{ label }}</div>
+            <div class="flex items-center gap-2">
+              <input type="number" name="{{ lo }}" data-filter step="0.1" min="0" max="10" placeholder="min"
+                     value="{{ filters.get(lo, '') }}" aria-label="{{ label }} minimum"
+                     class="w-full bg-sentry-bg border border-sentry-border rounded-lg px-2.5 py-1.5 text-sm text-sentry-text tabular-nums
+                            focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+              <span class="text-sentry-muted">–</span>
+              <input type="number" name="{{ hi }}" data-filter step="0.1" min="0" max="10" placeholder="max"
+                     value="{{ filters.get(hi, '') }}" aria-label="{{ label }} maximum"
+                     class="w-full bg-sentry-bg border border-sentry-border rounded-lg px-2.5 py-1.5 text-sm text-sentry-text tabular-nums
+                            focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+            </div>
+          </div>
+          {% endfor %}
+          <div>
+            <div class="text-xs font-semibold text-sentry-muted uppercase tracking-wide mb-1.5">Minimum RICE</div>
+            <input type="number" name="min_rice" data-filter step="0.1" min="0" placeholder="e.g. 15"
+                   value="{{ filters.get('min_rice', '') }}" aria-label="Minimum RICE score"
+                   class="w-full bg-sentry-bg border border-sentry-border rounded-lg px-2.5 py-1.5 text-sm text-sentry-text tabular-nums
+                          focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit (no-JS fallback) + spinner -->
+    <button type="submit"
+            class="js-hidden bg-sentry-purple text-white px-4 py-2 rounded-lg text-sm font-medium
+                   hover:bg-sentry-purplelt focus:outline-none focus:ring-2 focus:ring-sentry-purple/50 transition-colors">
+      Filter
+    </button>
+    <svg id="filter-spinner" class="hidden w-4 h-4 text-sentry-muted animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" class="opacity-25"></circle>
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+    </svg>
+  </div>
+
+  <!-- Active-filter chips + clear all (rendered/updated client-side) -->
+  <div id="active-chips" class="flex flex-wrap items-center gap-2 mt-3 empty:hidden"></div>
+</form>
+
+<!-- Issues table (results fragment; swapped live on filter) -->
+<div id="results">
+  {% include "_table.html" %}
+</div>
+<script>
+  // Per-category [icon, colour], mirrored from the server so the category popover
+  // trigger can re-render its dot/label/icon client-side without a round-trip.
+  var CAT_META = {{ cat_meta | tojson }};
+
+  // Subtle highlight applied to the summary row of the open issue.
+  var OPEN_ROW_HIGHLIGHT = ['bg-sentry-purple/[0.07]'];
+
+  function setRowOpen(id, open) {
+    var details = document.getElementById('details-' + id);
+    var row = document.getElementById('row-' + id);
+    if (details) details.classList.toggle('hidden', !open);
+    if (row) OPEN_ROW_HIGHLIGHT.forEach(function (c) { row.classList.toggle(c, open); });
+  }
+
+  // Single-open accordion: opening one issue's detail row closes any other open one.
+  function toggleDetails(id) {
+    var details = document.getElementById('details-' + id);
+    if (!details) return;
+    var willOpen = details.classList.contains('hidden');
+
+    // Close every currently-open detail row (and clear its highlight).
+    document.querySelectorAll('tr[id^="details-"]:not(.hidden)').forEach(function (el) {
+      setRowOpen(el.id.slice('details-'.length), false);
+    });
+
+    if (willOpen) setRowOpen(id, true);
+  }
+
+  var RICE_HIGH = {{ rice_high }}, RICE_MEDIUM = {{ rice_medium }};
+  function riceColor(v) {
+    return v >= RICE_HIGH ? '#F55459' : (v >= RICE_MEDIUM ? '#F5B000' : '#4DC771');
+  }
+
+  var COLOR_SCORES = {{ 'true' if COLOR_SCORES else 'false' }};
+  function scoreColor(v) {
+    if (v <= 2) return '#8B93A0';
+    if (v <= 4) return '#4DC771';
+    if (v <= 6) return '#F5B000';
+    if (v <= 9) return '#FF7738';
+    return '#F55459';
+  }
+
+  // Copy a ready-to-run /fix-sentry prompt (issue + assessment) to the clipboard.
+  function copyFixPrompt(id, btn) {
+    var el = document.getElementById('prompt-' + id);
+    var text = el ? el.textContent.trim() : '';
+    navigator.clipboard.writeText(text).then(function () {
+      var orig = btn.innerHTML;
+      // Swap to a same-sized check icon so the button doesn't change height.
+      btn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i>';
+      btn.style.color = '#4DC771';
+      btn.style.borderColor = '#4DC771';
+      if (window.lucide) lucide.createIcons();
+      setTimeout(function () {
+        btn.innerHTML = orig;
+        btn.style.color = '';
+        btn.style.borderColor = '';
+        if (window.lucide) lucide.createIcons();
+      }, 1400);
+    }).catch(function () { alert('Copy failed — select the text manually.'); });
+  }
+
+  // Update the "<n> issues" count from the rows currently in the table.
+  function refreshResultsCount() {
+    var box = document.getElementById('results-count');
+    if (!box) return;
+    var n = document.querySelectorAll('#results tr[id^="row-"]').length;
+    var spans = box.querySelectorAll('span');
+    if (spans[0]) spans[0].textContent = n;
+    if (spans[1]) spans[1].textContent = n === 1 ? 'issue' : 'issues';
+  }
+
+  // Resolve an issue on Sentry, then drop it from the list. Irreversible — confirm first.
+  function resolveIssue(id, sentryId, btn) {
+    if (!confirm('Resolve ' + sentryId + ' on Sentry and remove it from this list?\n\nThis marks it resolved in Sentry and deletes it here. It cannot be undone.')) return;
+    var orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i>';
+    if (window.lucide) lucide.createIcons();
+
+    fetch('/issues/' + id + '/resolve', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || ('HTTP ' + r.status)); },
+                                      function () { throw new Error('HTTP ' + r.status); });
+      return r.json();
+    }).then(function () {
+      ['row-' + id, 'details-' + id].forEach(function (rid) {
+        var el = document.getElementById(rid);
+        if (el) el.remove();
+      });
+      refreshResultsCount();
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+      if (window.lucide) lucide.createIcons();
+      alert('Could not resolve: ' + err.message);
+    });
+  }
+
+  // Render a dimension cell: integer value + a ✎ marker when it differs from the AI value.
+  function renderDimCell(id, field, eff, ai) {
+    var cell = document.getElementById('cell-' + field + '-' + id);
+    if (!cell) return;
+    var html = String(Math.round(eff));
+    if (Math.abs(eff - ai) > 1e-9) {
+      html += ' <span class="text-sentry-flameorng text-xs ml-0.5" title="AI: ' + ai + '">✎</span>';
+    }
+    cell.innerHTML = html;
+    if (COLOR_SCORES) cell.style.color = scoreColor(eff);
+  }
+
+  // Save the override form in place (no full page reload), then update the row live.
+  function saveOverride(event, id) {
+    event.preventDefault();
+    var form = event.target;
+    var btn = form.querySelector('button[type=submit]');
+    var original = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+      body: new FormData(form),
+    }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t || ('HTTP ' + r.status)); });
+      return r.json();
+    }).then(function (d) {
+      renderDimCell(id, 'reach', d.eff_reach, d.reach);
+      renderDimCell(id, 'impact', d.eff_impact, d.impact);
+      renderDimCell(id, 'confidence', d.eff_confidence, d.confidence);
+      renderDimCell(id, 'effort', d.eff_effort, d.effort);
+      var rc = document.getElementById('cell-effrice-' + id);
+      if (rc) { rc.textContent = String(Math.round(d.eff_rice)); rc.style.color = riceColor(d.eff_rice); }
+      // The form lives inside the detail row now; leave it open and just confirm the save.
+      if (btn) { btn.textContent = '✓ Saved'; setTimeout(function () { btn.textContent = original; btn.disabled = false; }, 1200); }
+    }).catch(function (err) {
+      if (btn) { btn.textContent = original; btn.disabled = false; }
+      alert('Could not save override: ' + err.message);
+    });
+    return false;
+  }
+
+  // Render Markdown in the AI reasoning / codebase findings panels (breaks:true → newlines as <br>).
+  // Scoped to `root` so it can be re-run on just the swapped results after a live filter.
+  // Marks rendered nodes so a re-run doesn't double-parse already-rendered HTML.
+  function renderMarkdown(root) {
+    if (!window.marked) return;
+    marked.setOptions({ breaks: true, gfm: true });
+    (root || document).querySelectorAll('.md:not([data-rendered])').forEach(function (el) {
+      el.innerHTML = marked.parse(el.textContent.trim());
+      el.setAttribute('data-rendered', '');
+    });
+  }
+
+  // Re-init the dynamic bits of a freshly-swapped results fragment (icons + markdown).
+  function hydrateResults(root) {
+    if (window.lucide) lucide.createIcons();
+    renderMarkdown(root);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    renderMarkdown(document);
+    initLiveFilter();
+  });
+
+  // ── Live filtering: debounced ?partial=1 fetch → swap #results in place ──────────
+  function initLiveFilter() {
+    var form = document.getElementById('filter-form');
+    var results = document.getElementById('results');
+    if (!form || !results || !window.fetch) return;  // no-JS / unsupported → plain GET form still works
+
+    // Progressive enhancement: hide the submit button now that JS drives updates.
+    document.querySelectorAll('.js-hidden').forEach(function (el) { el.classList.add('hidden'); });
+
+    var spinner = document.getElementById('filter-spinner');
+    var reqSeq = 0;        // monotonic id → ignore out-of-order responses
+    var debounceTimer = null;
+
+    // Build the query string from the form, dropping empties and default env so URLs stay clean.
+    function currentQuery() {
+      var data = new FormData(form);
+      var params = new URLSearchParams();
+      data.forEach(function (value, key) {
+        if (value === '' || value == null) return;
+        if (key === 'env' && value === 'prod') return;       // prod is the default
+        if (key === 'app' && value === 'all') return;
+        if (key === 'cat' && value === 'all') return;
+        if ((key === 'sort') && value === 'eff_rice') return; // server default
+        if ((key === 'order') && value === 'desc') return;
+        params.set(key, value);
+      });
+      return params;
+    }
+
+    function applyResultsHtml(html) {
+      results.innerHTML = html;
+      hydrateResults(results);
+      bindSortLinks();
+    }
+
+    function runFetch() {
+      var params = currentQuery();
+      var seq = ++reqSeq;
+      if (spinner) spinner.classList.remove('hidden');
+      results.style.opacity = '0.55';
+      results.style.transition = 'opacity 120ms';
+
+      var fetchParams = new URLSearchParams(params);
+      fetchParams.set('partial', '1');
+
+      fetch('/?' + fetchParams.toString(), { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          if (seq !== reqSeq) return;  // a newer request started → discard this one
+          applyResultsHtml(html);
+          // Keep the address bar shareable / back-button-friendly (no history entry per keystroke).
+          var qs = params.toString();
+          history.replaceState(null, '', qs ? '/?' + qs : '/');
+        })
+        .catch(function () { /* keep the current rows; the form can still be submitted normally */ })
+        .finally(function () {
+          if (seq !== reqSeq) return;
+          if (spinner) spinner.classList.add('hidden');
+          results.style.opacity = '';
+        });
+    }
+
+    function scheduleFetch(delay) {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runFetch, delay == null ? 200 : delay);
+      renderChips();  // chips reflect intent immediately, before the round-trip
+    }
+
+    // Any control carrying data-filter triggers a debounced refresh.
+    form.addEventListener('input', function (e) {
+      if (e.target.closest('[data-filter]') || e.target.matches('[data-filter]')) scheduleFetch();
+    });
+    form.addEventListener('change', function (e) {
+      if (e.target.matches('[data-filter]')) scheduleFetch(0);  // selects/radios feel instant
+    });
+    // Don't let Enter trigger a full-page submit when JS is in charge.
+    form.addEventListener('submit', function (e) { e.preventDefault(); scheduleFetch(0); });
+
+    // Sort links inside the swapped fragment: intercept and route through the live fetch.
+    function bindSortLinks() {
+      results.querySelectorAll('.sort-link').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          form.querySelector('input[name=sort]').value = a.dataset.sort;
+          form.querySelector('input[name=order]').value = a.dataset.order;
+          scheduleFetch(0);
+        });
+      });
+    }
+    bindSortLinks();
+
+    // ── Category popover wiring (a hidden <select name=cat> is the real form field) ──
+    var catSelect = form.querySelector('select[name=cat]');
+    form.querySelectorAll('[data-cat-option]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (catSelect) {
+          catSelect.value = btn.dataset.catOption;
+          catSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        closeAllPopovers();
+        syncCatButton();
+      });
+    });
+    function syncCatButton() {
+      // Re-render the category trigger label/dot from the selected option (cheap, local).
+      var pop = catSelect ? catSelect.closest('[data-popover]') : null;
+      if (!pop) return;
+      var toggle = pop.querySelector('[data-popover-toggle]');
+      var val = catSelect.value;
+      var meta = CAT_META[val];
+      if (val === 'all' || !meta) {
+        toggle.innerHTML = '<i data-lucide="shapes" class="w-4 h-4 text-sentry-muted"></i>' +
+          '<span class="text-sentry-text2">All categories</span>' +
+          '<i data-lucide="chevron-down" class="w-3.5 h-3.5 text-sentry-muted"></i>';
+      } else {
+        toggle.innerHTML = '<span class="w-2 h-2 rounded-full" style="background:' + meta[1] + ';"></span>' +
+          '<span>' + val + '</span>' +
+          '<i data-lucide="chevron-down" class="w-3.5 h-3.5 text-sentry-muted"></i>';
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // ── Active-filter chips ──────────────────────────────────────────────────────
+    var chipBox = document.getElementById('active-chips');
+    var ENV_LABELS = { all: 'All envs', staging: 'Staging', dev: 'Dev', qa: 'QA' };
+    var NUM_LABELS = {
+      min_reach: 'Reach ≥', max_reach: 'Reach ≤',
+      min_impact: 'Impact ≥', max_impact: 'Impact ≤', min_rice: 'RICE ≥',
+    };
+
+    function chipsFromForm() {
+      var chips = [];
+      var data = new FormData(form);
+      var q = (data.get('q') || '').trim();
+      if (q) chips.push({ field: 'q', label: 'Search', value: q });
+      var env = data.get('env');
+      if (env && env !== 'prod') chips.push({ field: 'env', label: 'Env', value: ENV_LABELS[env] || env, reset: 'prod' });
+      if (data.get('new')) chips.push({ field: 'new', label: 'Showing', value: 'New only' });
+      var appv = data.get('app');
+      if (appv && appv !== 'all') chips.push({ field: 'app', label: 'App', value: appv, reset: 'all' });
+      var cat = data.get('cat');
+      if (cat && cat !== 'all') chips.push({ field: 'cat', label: 'Category', value: cat, reset: 'all' });
+      Object.keys(NUM_LABELS).forEach(function (k) {
+        var v = (data.get(k) || '').trim();
+        if (v) chips.push({ field: k, label: NUM_LABELS[k], value: v });
+      });
+      return chips;
+    }
+
+    function renderChips() {
+      if (!chipBox) return;
+      var chips = chipsFromForm();
+      chipBox.innerHTML = '';
+      if (!chips.length) return;
+      chips.forEach(function (c) {
+        var el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium ' +
+          'bg-sentry-purple/10 border border-sentry-purple/40 text-sentry-purplelt hover:bg-sentry-purple/20 transition-colors';
+        el.innerHTML = '<span class="text-sentry-muted">' + c.label + '</span>' +
+          '<span class="text-sentry-text">' + escapeHtml(c.value) + '</span>' +
+          '<i data-lucide="x" class="w-3.5 h-3.5"></i>';
+        el.addEventListener('click', function () { clearField(c); });
+        chipBox.appendChild(el);
+      });
+      var clearAll = document.createElement('button');
+      clearAll.type = 'button';
+      clearAll.className = 'text-xs text-sentry-text2 hover:text-sentry-text underline underline-offset-2 transition-colors ml-1';
+      clearAll.textContent = 'Clear all';
+      clearAll.addEventListener('click', resetAll);
+      chipBox.appendChild(clearAll);
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function clearField(c) {
+      var input = form.querySelector('[name="' + c.field + '"]');
+      if (c.field === 'env') {
+        var def = form.querySelector('input[name=env][value="' + (c.reset || 'prod') + '"]');
+        if (def) def.checked = true;
+      } else if (c.field === 'new') {
+        var cb = form.querySelector('input[name=new]');
+        if (cb) cb.checked = false;
+      } else if (input) {
+        if (input.tagName === 'SELECT') input.value = c.reset || 'all';
+        else input.value = '';
+      }
+      if (c.field === 'cat') syncCatButton();
+      scheduleFetch(0);
+    }
+
+    function resetAll() {
+      form.querySelector('input[name=q]').value = '';
+      var prod = form.querySelector('input[name=env][value=prod]');
+      if (prod) prod.checked = true;
+      var newCb = form.querySelector('input[name=new]');
+      if (newCb) newCb.checked = false;
+      form.querySelectorAll('select[name=app], select[name=cat]').forEach(function (s) { s.value = 'all'; });
+      Object.keys(NUM_LABELS).forEach(function (k) {
+        var i = form.querySelector('[name="' + k + '"]'); if (i) i.value = '';
+      });
+      form.querySelector('input[name=sort]').value = 'eff_rice';
+      form.querySelector('input[name=order]').value = 'desc';
+      syncCatButton();
+      scheduleFetch(0);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    // ── Popover open/close (shared by category + advanced) ───────────────────────
+    function closeAllPopovers() {
+      document.querySelectorAll('[data-popover-panel]').forEach(function (p) { p.classList.add('hidden'); });
+      document.querySelectorAll('[data-popover-toggle]').forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+    }
+    document.querySelectorAll('[data-popover-toggle]').forEach(function (toggle) {
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var panel = toggle.parentElement.querySelector('[data-popover-panel]');
+        var willOpen = panel.classList.contains('hidden');
+        closeAllPopovers();
+        if (willOpen) { panel.classList.remove('hidden'); toggle.setAttribute('aria-expanded', 'true'); }
+      });
+    });
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('[data-popover]')) closeAllPopovers();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAllPopovers(); });
+
+    renderChips();  // initial paint from server-provided values
+  }
+</script>
+{% endblock %}

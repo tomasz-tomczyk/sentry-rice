@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentry-rice"
+version = "0.1.0"
+description = "RICE-prioritise your Sentry issues, with AI scoring that traces each issue into your codebase (via Claude Code)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "Flask>=3.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+sentry-rice = "sentryrice.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sentryrice = [
+    "web/templates/*.html",
+    "web/static/*",
+    "claude_templates/commands/*.md",
+    "claude_templates/workflows/*.js",
+    "rubric.example.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

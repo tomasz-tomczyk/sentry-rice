@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Disagreements — RICE Scorer{% endblock %}
+
+{% block content %}
+<div class="mb-5">
+  <h2 class="text-lg font-semibold text-sentry-text tracking-tight">Disagreements</h2>
+  <p class="text-sm text-sentry-text2 mt-1">
+    Every override you make is recorded here. Use this to spot patterns in where the AI over- or under-estimates.
+  </p>
+</div>
+
+<div class="bg-sentry-surface rounded-xl border border-sentry-border overflow-hidden shadow-[0_8px_30px_-16px_rgba(0,0,0,0.8)]">
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm border-collapse">
+    <thead>
+      <tr class="border-b border-sentry-borderlt">
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">Issue</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">Field</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">AI</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">Yours</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">Delta</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">Reason</th>
+        <th class="px-4 py-2.5 text-left text-[10px] font-semibold text-sentry-muted uppercase tracking-[0.08em]">Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      {% set delta = row.your_value - row.ai_value %}
+      <tr class="border-b border-white/[0.06] hover:bg-sentry-elevated/60 transition-colors">
+        <td class="px-4 py-3 max-w-sm">
+          <a href="{{ row.url }}" target="_blank" class="text-sentry-text hover:text-sentry-purplelt font-medium transition-colors">
+            {{ row.title }}
+          </a>
+        </td>
+        <td class="px-4 py-3">
+          <span class="text-[11px] px-2 py-0.5 rounded font-mono border border-sentry-borderlt text-sentry-text2"
+                style="background:rgba(255,255,255,0.04);">{{ row.field }}</span>
+        </td>
+        <td class="px-4 py-3 tabular-nums font-mono text-[13px] text-sentry-muted">{{ "%.1f"|format(row.ai_value) }}</td>
+        <td class="px-4 py-3 tabular-nums font-mono text-[13px] font-medium text-sentry-text">{{ "%.1f"|format(row.your_value) }}</td>
+        <td class="px-4 py-3 tabular-nums font-mono text-[13px] font-semibold"
+            style="color: {{ '#4DC771' if delta > 0 else '#F55459' }};">
+          {{ "%+.1f"|format(delta) }}
+        </td>
+        <td class="px-4 py-3 text-sentry-text2 text-xs max-w-xs">{{ row.reason or '—' }}</td>
+        <td class="px-4 py-3 text-sentry-muted text-xs font-mono whitespace-nowrap">
+          {{ row.created_at[:10] if row.created_at else '—' }}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="px-4 py-16 text-center text-sentry-muted">No overrides yet.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,211 @@
+{# Results fragment: live result count + the issues table.
+   Rendered standalone when ?partial=1 (for AJAX swaps) and included by index.html
+   for the normal full-page render. Everything that changes on a filter/sort lives
+   here so a single swap keeps the count, sort arrows and rows consistent. #}
+{% set COLOR_SCORES = true %}
+
+<div id="results-count" class="mb-3 flex items-center gap-2 text-sm text-sentry-text2">
+  <span class="font-semibold text-sentry-text tabular-nums">{{ issues|length }}</span>
+  <span>{{ 'issue' if issues|length == 1 else 'issues' }}</span>
+</div>
+
+<div class="bg-sentry-surface rounded-xl border border-sentry-border shadow-[0_8px_30px_-16px_rgba(0,0,0,0.8)]">
+  <table class="w-full border-collapse">
+    <thead>
+      <tr class="border-b border-sentry-borderlt">
+        {% set cols = [
+          ('title', 'Issue'),
+          ('reach', 'Reach'),
+          ('impact', 'Impact'),
+          ('confidence', 'Conf.'),
+          ('effort', 'Effort'),
+          ('eff_rice', 'RICE'),
+          ('last_seen', 'Last Seen'),
+          ('user_count', 'Users'),
+        ] %}
+        {% set keep = '&q=' ~ search ~ '&env=' ~ env ~ ('&app=' ~ app_filter if app_filter else '') ~ ('&cat=' ~ cat_filter if cat_filter else '') ~ ('&new=1' if new_only else '') %}
+        {% for col, label in cols %}
+          {% set next_order = 'asc' if (sort == col and order == 'desc') else 'desc' %}
+          <th class="sticky top-0 z-20 bg-sentry-elevated px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide whitespace-nowrap border-b border-sentry-borderlt
+                     {{ 'text-sentry-purplelt' if sort == col else 'text-sentry-muted' }}">
+            <a href="/?sort={{ col }}&order={{ next_order }}{{ keep }}{% for k in ['min_reach','max_reach','min_impact','max_impact','min_rice'] %}{% if filters.get(k) %}&{{ k }}={{ filters.get(k) }}{% endif %}{% endfor %}"
+               data-sort="{{ col }}" data-order="{{ next_order }}"
+               class="sort-link inline-flex items-center gap-1 hover:text-sentry-purplelt transition-colors">
+              {{ label }}
+              {% if sort == col %}
+                <span class="text-sentry-flameorng">{{ '↓' if order == 'desc' else '↑' }}</span>
+              {% endif %}
+            </a>
+          </th>
+        {% endfor %}
+        <th class="sticky top-0 z-20 bg-sentry-elevated px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide text-sentry-muted border-b border-sentry-borderlt">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in issues %}
+      {# Effective-RICE severity colour: high = red, medium = amber, low = green #}
+      {% if issue.eff_rice >= rice_high %}{% set rice_color = '#F55459' %}
+      {% elif issue.eff_rice >= rice_medium %}{% set rice_color = '#F5B000' %}
+      {% else %}{% set rice_color = '#4DC771' %}{% endif %}
+      <tr id="row-{{ issue.id }}" onclick="toggleDetails({{ issue.id }})"
+          class="border-b border-white/[0.06] hover:bg-sentry-elevated/60 transition-colors cursor-pointer group"
+          {% if issue.is_new %}style="box-shadow: inset 3px 0 0 0 #6C5FC7;"{% endif %}>
+        <td class="px-4 py-3.5 max-w-md align-top">
+          <div class="flex items-start gap-2.5">
+            <a href="{{ issue.url }}" target="_blank" rel="noopener" title="Open in Sentry"
+               onclick="event.stopPropagation()"
+               class="shrink-0 mt-0.5 text-sentry-muted hover:text-sentry-flameorng transition-colors">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor" aria-label="Open in Sentry">
+                <path d="M13.91 2.505c-.873-1.448-2.972-1.448-3.844 0L6.904 7.92a15.478 15.478 0 0 1 8.53 12.811h-2.221A13.301 13.301 0 0 0 5.784 9.814l-2.926 5.06a7.65 7.65 0 0 1 4.435 5.848H2.194a.365.365 0 0 1-.298-.534l1.413-2.402a5.16 5.16 0 0 0-1.614-.913L.296 19.275a2.182 2.182 0 0 0 .812 2.999 2.24 2.24 0 0 0 1.086.288h6.983a9.322 9.322 0 0 0-3.845-8.318l1.11-1.922a11.47 11.47 0 0 1 4.95 10.24h5.915a17.242 17.242 0 0 0-7.885-15.28l2.244-3.845a.37.37 0 0 1 .504-.13c.255.14 9.75 16.708 9.928 16.9a.365.365 0 0 1-.327.543h-2.287c.029.612.029 1.223 0 1.831h2.297a2.206 2.206 0 0 0 1.922-3.31z"/>
+              </svg>
+            </a>
+            <div class="min-w-0">
+              <div class="mb-0.5 font-mono text-xs text-sentry-muted select-text">{{ issue.sentry_id }}</div>
+              <span class="text-sentry-text group-hover:text-sentry-purplelt font-medium text-base leading-snug transition-colors">{{ issue.title }}</span>
+              <div class="mt-2 flex flex-wrap gap-1.5">
+                {% if issue.is_new %}
+                <span data-new-badge
+                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border"
+                      style="background:rgba(108,95,199,0.18);color:#A396DA;border-color:rgba(108,95,199,0.45);"
+                      title="First imported in the most recent scan">
+                  <i data-lucide="sparkles" class="w-3 h-3"></i>New
+                </span>
+                {% endif %}
+                {% set cm = cat_meta.get(issue.impact_category, ['shapes', '#9AA0AA']) %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border"
+                      style="background:{{ cm[1] }}22;color:{{ cm[1] }};border-color:{{ cm[1] }}55;">
+                  <i data-lucide="{{ cm[0] }}" class="w-3.5 h-3.5"></i>{{ issue.impact_category }}
+                </span>
+                {% set is_prod = (issue.environment or '')|lower in ['production', 'prod'] %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border"
+                      title="{% if is_prod %}Production{% else %}{{ issue.environment }} — reach is relative to this environment (all envs treated equally){% endif %}"
+                      {% if is_prod %}style="background:rgba(77,199,113,0.13);color:#4DC771;border-color:rgba(77,199,113,0.30);"
+                      {% else %}style="background:rgba(245,176,0,0.13);color:#F5B000;border-color:rgba(245,176,0,0.30);"{% endif %}>
+                  {{ issue.environment }}
+                </span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border border-sentry-borderlt text-sentry-text2"
+                      style="background:rgba(255,255,255,0.04);">
+                  {{ issue.app }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </td>
+        <td id="cell-reach-{{ issue.id }}" class="px-4 py-3.5 tabular-nums font-mono text-base text-sentry-text2 align-top"
+            {% if COLOR_SCORES %}style="color: {{ issue.eff_reach | score_color }};"{% endif %}>
+          {{ issue.eff_reach | round | int }}
+          {% if issue.eff_reach != issue.reach %}
+            <span class="text-sentry-flameorng text-xs ml-0.5" title="AI: {{ issue.reach }}">✎</span>
+          {% endif %}
+        </td>
+        <td id="cell-impact-{{ issue.id }}" class="px-4 py-3.5 tabular-nums font-mono text-base text-sentry-text2 align-top"
+            {% if COLOR_SCORES %}style="color: {{ issue.eff_impact | score_color }};"{% endif %}>
+          {{ issue.eff_impact | round | int }}
+          {% if issue.eff_impact != issue.impact %}
+            <span class="text-sentry-flameorng text-xs ml-0.5" title="AI: {{ issue.impact }}">✎</span>
+          {% endif %}
+        </td>
+        <td id="cell-confidence-{{ issue.id }}" class="px-4 py-3.5 tabular-nums font-mono text-base text-sentry-text2 align-top"
+            {% if COLOR_SCORES %}style="color: {{ issue.eff_confidence | score_color }};"{% endif %}>
+          {{ issue.eff_confidence | round | int }}
+          {% if issue.eff_confidence != issue.confidence %}
+            <span class="text-sentry-flameorng text-xs ml-0.5" title="AI: {{ issue.confidence }}">✎</span>
+          {% endif %}
+        </td>
+        <td id="cell-effort-{{ issue.id }}" class="px-4 py-3.5 tabular-nums font-mono text-base text-sentry-text2 align-top"
+            {% if COLOR_SCORES %}style="color: {{ issue.eff_effort | score_color }};"{% endif %}>
+          {{ issue.eff_effort | round | int }}
+          {% if issue.eff_effort != issue.effort %}
+            <span class="text-sentry-flameorng text-xs ml-0.5" title="AI: {{ issue.effort }}">✎</span>
+          {% endif %}
+        </td>
+        <td id="cell-effrice-{{ issue.id }}" class="px-4 py-3.5 tabular-nums font-mono text-2xl font-bold align-top" style="color: {{ rice_color }};">{{ issue.eff_rice | round | int }}</td>
+        <td class="px-4 py-3.5 text-sentry-muted text-sm whitespace-nowrap align-top">
+          {{ issue.last_seen | reltime }}
+        </td>
+        <td class="px-4 py-3.5 tabular-nums font-mono text-base text-sentry-text2 align-top whitespace-nowrap">
+          {% if issue.user_count and issue.user_count > 0 %}
+            {{ issue.user_count | commas }}
+          {% else %}
+            <span class="inline-flex items-center gap-1 text-sentry-muted" title="No distinct users (background job) — showing event count">
+              <i data-lucide="activity" class="w-3.5 h-3.5"></i>{{ issue.event_count | commas }}<span class="text-xs ml-0.5">ev</span>
+            </span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3.5 align-top">
+          <div class="flex items-center gap-1.5">
+            <button onclick="event.stopPropagation(); copyFixPrompt({{ issue.id }}, this)" title="Copy /fix-sentry prompt"
+                    class="inline-flex items-center text-sentry-text2 border border-sentry-borderlt rounded-md px-2 py-1 bg-transparent
+                           hover:border-sentry-purple hover:text-sentry-purplelt hover:bg-sentry-purple/10 transition-colors">
+              <i data-lucide="clipboard-copy" class="w-4 h-4"></i>
+            </button>
+            <button onclick="event.stopPropagation(); resolveIssue({{ issue.id }}, '{{ issue.sentry_id }}', this)"
+                    title="Resolve on Sentry & remove from this list"
+                    class="inline-flex items-center text-sentry-text2 border border-sentry-borderlt rounded-md px-2 py-1 bg-transparent
+                           hover:border-sentry-green hover:text-sentry-green hover:bg-sentry-green/10 transition-colors">
+              <i data-lucide="check-check" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      <!-- Full-width detail row (opened by clicking the issue): reasoning, findings, and the override form -->
+      <tr id="details-{{ issue.id }}" class="hidden bg-sentry-bg/30">
+        <td colspan="9" class="px-4 py-4">
+          <div class="rounded-lg border border-sentry-border bg-sentry-surface overflow-hidden grid md:grid-cols-2 md:divide-x divide-sentry-border">
+            <div class="p-5">
+              <div class="font-semibold text-sentry-purplelt uppercase tracking-wide text-xs mb-2.5">AI reasoning</div>
+              <div class="md text-sentry-text2 text-base leading-relaxed">{{ issue.reasoning or '—' }}</div>
+            </div>
+            <div class="p-5">
+              <div class="font-semibold text-sentry-purplelt uppercase tracking-wide text-xs mb-2.5">Codebase findings</div>
+              <div class="md text-sentry-text2 text-base leading-relaxed">{{ issue.code_findings or 'No codebase investigation recorded.' }}</div>
+            </div>
+          </div>
+
+          <!-- Override form — shown inline with the detail; values left at the AI score aren't recorded -->
+          <form method="post" action="/issues/{{ issue.id }}/override"
+                onsubmit="return saveOverride(event, {{ issue.id }})"
+                class="mt-3 bg-sentry-bg rounded-lg border border-sentry-border p-4">
+            <p class="text-sm text-sentry-muted mb-3">Override any of the four — values left at the AI score won't be recorded as a disagreement.</p>
+            <div class="flex flex-wrap items-end gap-4">
+              {% set ov_fields = [
+                ('reach', 'Reach', issue.eff_reach, '0'),
+                ('impact', 'Impact', issue.eff_impact, '0'),
+                ('confidence', 'Confidence', issue.eff_confidence, '0'),
+                ('effort', 'Effort', issue.eff_effort, '0.5'),
+              ] %}
+              {% for name, label, val, minv in ov_fields %}
+              <label class="text-xs font-semibold text-sentry-text2 uppercase tracking-wide flex flex-col gap-1.5">{{ label }}
+                <input type="number" name="{{ name }}" step="0.1" min="{{ minv }}" max="10"
+                       value="{{ '%.1f'|format(val) }}"
+                       class="w-24 bg-sentry-surface border border-sentry-border rounded-lg px-3 py-1.5 text-base text-sentry-text tabular-nums font-normal
+                              focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+              </label>
+              {% endfor %}
+              <label class="text-xs font-semibold text-sentry-text2 uppercase tracking-wide flex flex-col gap-1.5 flex-1 min-w-52">Reason
+                <input type="text" name="reason" placeholder="Why? (applies to the values you changed)"
+                       class="w-full bg-sentry-surface border border-sentry-border rounded-lg px-3 py-1.5 text-base text-sentry-text font-normal placeholder-sentry-muted
+                              focus:outline-none focus:border-sentry-purple focus:ring-2 focus:ring-sentry-purple/40 transition-colors">
+              </label>
+              <button type="submit"
+                      class="bg-sentry-purple text-white rounded-lg px-5 py-1.5 text-base font-medium
+                             hover:bg-sentry-purplelt focus:outline-none focus:ring-2 focus:ring-sentry-purple/50 transition-colors shadow-[0_2px_8px_-2px_rgba(108,95,199,0.6)]">
+                Save overrides
+              </button>
+            </div>
+          </form>
+
+          <div id="prompt-{{ issue.id }}" class="hidden">{{ fix_prompts[issue.id] }}</div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="9" class="px-4 py-16 text-center text-sentry-muted text-base">
+          No issues match — try widening the filters, or open Claude Code here and run <code class="bg-sentry-elevated text-sentry-text2 px-1.5 py-0.5 rounded font-mono">/reimport</code>.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
