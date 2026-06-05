@@ -73,6 +73,21 @@ def test_reconcile_marks_resolved_and_reopens(config):
     assert r2["newly_resolved"] == 1 and r2["reopened"] == 1
 
 
+def test_fetch_recent_issues_swallows_404_for_unknown_env(config, monkeypatch):
+    import urllib.error
+    import pytest
+
+    def boom(req, timeout=60):
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    # A 404 for a named environment (it doesn't exist in this project) → empty, no raise.
+    assert sentry.fetch_recent_issues(config, "111", "tok", 7, environment="staging") == []
+    # A 404 with no environment is a genuine error and propagates.
+    with pytest.raises(urllib.error.HTTPError):
+        sentry.fetch_recent_issues(config, "111", "tok", 7)
+
+
 def test_resolve_on_sentry_resolves_shortid_then_puts(config, monkeypatch):
     calls = []
 

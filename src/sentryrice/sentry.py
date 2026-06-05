@@ -10,6 +10,7 @@ Auth: `SENTRY_AUTH_TOKEN` env, else the `[auth] token` in ~/.sentryclirc.
 import configparser
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -118,9 +119,16 @@ def fetch_recent_issues(config: Config, project_id, token, days, environment=Non
             params["cursor"] = cursor
         req = urllib.request.Request(base + "?" + urllib.parse.urlencode(params),
                                      headers={"Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            issues = json.loads(resp.read().decode())
-            link = resp.headers.get("Link")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                issues = json.loads(resp.read().decode())
+                link = resp.headers.get("Link")
+        except urllib.error.HTTPError as e:
+            # An environment that doesn't exist in this project 404s; treat it as
+            # "no issues for that env" rather than failing the whole sync.
+            if e.code == 404 and environment:
+                return out
+            raise
         stop = False
         for it in issues:
             last_seen = it.get("lastSeen")
