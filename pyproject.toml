@@ -9,10 +9,28 @@ description = "RICE-prioritise your Sentry issues, with AI scoring that traces e
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
+authors = [{ name = "Tomasz Tomczyk", email = "me@tomasztomczyk.com" }]
+keywords = ["sentry", "rice", "triage", "prioritization", "issues", "claude-code"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: Flask",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Bug Tracking",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "Flask>=3.0",
     "PyYAML>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tomasz-tomczyk/sentry-rice"
+Repository = "https://github.com/tomasz-tomczyk/sentry-rice"
+Issues = "https://github.com/tomasz-tomczyk/sentry-rice/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
