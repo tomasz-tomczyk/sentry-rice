@@ -3,6 +3,7 @@ substituting concrete paths from the loaded config. Claude Code reads Markdown /
 JS directly (it doesn't parse your YAML), so we bake the paths in at init time.
 """
 import os
+import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _TEMPLATE_ROOT = os.path.join(_HERE, "claude_templates")
@@ -17,12 +18,19 @@ _FILES = [
 
 
 def _substitutions(config, config_path):
+    # The sentry-rice binary next to the interpreter running init-claude — i.e. the
+    # user's venv. Baked in so the rendered commands/workflow don't depend on PATH
+    # (Workflow sub-agents in particular don't inherit an activated venv).
+    rice_bin = os.path.join(os.path.dirname(sys.executable), "sentry-rice")
+    if not os.path.exists(rice_bin):
+        rice_bin = "sentry-rice"   # fall back to PATH if not found next to python
     return {
         "__PROJECT_NAME__": config.project.name,
         "__CODEBASE_PATH__": config.project.codebase_path or "/absolute/path/to/your/repo",
         "__RUBRIC_PATH__": config.rubric_path(),
         "__CONFIG_PATH__": os.path.abspath(config_path),
         "__DB_PATH__": config.db_path,
+        "__RICE_BIN__": rice_bin,
     }
 
 

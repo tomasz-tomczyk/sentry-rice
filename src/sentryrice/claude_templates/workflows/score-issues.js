@@ -11,7 +11,8 @@ export const meta = {
 const RUBRIC = '__RUBRIC_PATH__'
 const CODEBASE = '__CODEBASE_PATH__'
 const CONFIG = '__CONFIG_PATH__'
-const UPSERT = `sentry-rice --config ${CONFIG} upsert`
+const RICE = '__RICE_BIN__'
+const UPSERT = `${RICE} --config ${CONFIG} upsert`
 
 // args: { list?: string } — path to the JSON array of issues. Defaults to /tmp/unscored.json.
 const LIST = (args && args.list) || '/tmp/unscored.json'

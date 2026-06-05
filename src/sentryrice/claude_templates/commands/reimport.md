@@ -11,7 +11,7 @@ issue, tracing into __PROJECT_NAME__'s codebase.
    RICE. Activate your sentry-rice virtualenv first, then:
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ sync
+   __RICE_BIN__ --config __CONFIG_PATH__ sync
    ```
 
    Report the printed summary (window counts, imported, pruned).
@@ -19,7 +19,7 @@ issue, tracing into __PROJECT_NAME__'s codebase.
 2. **Dump the unscored issues** the sync just created:
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ dump /tmp/unscored.json
+   __RICE_BIN__ --config __CONFIG_PATH__ dump /tmp/unscored.json
    ```
 
    If it reports 0 unscored, stop here — nothing new to score.
@@ -38,7 +38,7 @@ issue, tracing into __PROJECT_NAME__'s codebase.
 4. **Renormalise** once scoring completes (reach is per-environment relative):
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ recompute
+   __RICE_BIN__ --config __CONFIG_PATH__ recompute
    ```
 
 5. Restart the web UI if it's running, and report the new top issues.

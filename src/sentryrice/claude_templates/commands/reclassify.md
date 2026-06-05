@@ -10,7 +10,7 @@ NOT re-import from Sentry (run `/reimport` for that).
 1. **Dump every unresolved issue** (not just unscored):
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ dump --all /tmp/unscored.json
+   __RICE_BIN__ --config __CONFIG_PATH__ dump --all /tmp/unscored.json
    ```
 
    Report the count — this is how many sub-agents the next step spawns. Confirm
@@ -27,7 +27,7 @@ NOT re-import from Sentry (run `/reimport` for that).
 3. **Renormalise** when it finishes:
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ recompute
+   __RICE_BIN__ --config __CONFIG_PATH__ recompute
    ```
 
 4. Restart the web UI if running, and report how the ranking shifted.

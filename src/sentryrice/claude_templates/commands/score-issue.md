@@ -28,13 +28,13 @@ inline (no workflow needed for one issue).
 3. **Upsert.** Write the full payload JSON to a temp file and pipe it in:
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ upsert < /tmp/score-$ARGUMENTS.json
+   __RICE_BIN__ --config __CONFIG_PATH__ upsert < /tmp/score-$ARGUMENTS.json
    ```
 
 4. **Recompute** so per-environment reach re-levels:
 
    ```bash
-   sentry-rice --config __CONFIG_PATH__ recompute
+   __RICE_BIN__ --config __CONFIG_PATH__ recompute
    ```
 
 5. Report the resulting category, confidence, effort, computed reach and RICE.

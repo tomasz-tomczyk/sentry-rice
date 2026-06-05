@@ -19,8 +19,12 @@ def test_render_claude_templates_substitutes_paths(config, config_path, tmp_path
     workflow = (dest / ".claude/workflows/score-issues.js").read_text()
     # Placeholders are gone; concrete paths from the config are baked in.
     assert "__CODEBASE_PATH__" not in workflow and "__RUBRIC_PATH__" not in workflow
+    assert "__RICE_BIN__" not in workflow
     assert "/tmp/fake-repo" in workflow            # codebase_path from the fixture config
     assert config.rubric_path() in workflow
+    # The sentry-rice binary path is baked in (not a bare PATH-dependent command).
+    reimport = (dest / ".claude/commands/reimport.md").read_text()
+    assert "sentry-rice" in reimport and "__RICE_BIN__" not in reimport
 
 
 def test_cli_initdb_then_upsert_roundtrips(config_path, tmp_path, monkeypatch, capsys):
