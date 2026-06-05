@@ -26,7 +26,8 @@ class Category:
 class SentryConfig:
     org: str
     region_url: str = "https://us.sentry.io"
-    # {sentry_project_id: app_label} — the label tags issues by sub-app.
+    # {sentry_project_id: {name, codebase_path}} — name tags issues by sub-app;
+    # codebase_path is the local checkout the AI scorer traces into for that project.
     projects: dict = field(default_factory=dict)
     # Ordered [(sentry_env_query, stored_env)] — lets several Sentry env spellings
     # (e.g. 'prod' and 'production') fold into one stored env.
@@ -53,8 +54,6 @@ class Thresholds:
 @dataclass(frozen=True)
 class ProjectConfig:
     name: str = "My Project"
-    # Absolute path the scoring agents trace into (your codebase). Empty = unset.
-    codebase_path: str = ""
     # Scoring rubric (Markdown), resolved relative to the config file's directory.
     rubric_file: str = "rubric.md"
 
@@ -101,6 +100,13 @@ class Config:
         p = Path(self.project.rubric_file)
         return str(p if p.is_absolute() else Path(self.config_dir) / p)
 
+    def codebase_path_for(self, app: str) -> str:
+        """Return the codebase path configured for the given app label, or ''."""
+        for proj in self.sentry.projects.values():
+            if proj["name"] == app:
+                return proj.get("codebase_path", "")
+        return ""
+
 
 def _require(d: dict, key: str, ctx: str):
     if key not in d or d[key] in (None, ""):
@@ -120,15 +126,23 @@ def load_config(path: str) -> Config:
     proj = raw.get("project", {}) or {}
     project = ProjectConfig(
         name=proj.get("name", "My Project"),
-        codebase_path=os.path.expanduser(proj.get("codebase_path", "") or ""),
         rubric_file=proj.get("rubric_file", "rubric.md"),
     )
 
     sraw = raw.get("sentry", {}) or {}
+    _raw_projects = sraw.get("projects", {}) or {}
+    projects = {}
+    for k, v in _raw_projects.items():
+        if isinstance(v, str):
+            projects[str(k)] = {"name": v, "codebase_path": ""}
+        else:
+            v = v or {}
+            codebase = os.path.expandvars(os.path.expanduser(v.get("codebase_path", "") or ""))
+            projects[str(k)] = {"name": v.get("name", str(k)), "codebase_path": codebase}
     sentry = SentryConfig(
         org=_require(sraw, "org", "sentry."),
         region_url=sraw.get("region_url", "https://us.sentry.io").rstrip("/"),
-        projects={str(k): v for k, v in (sraw.get("projects", {}) or {}).items()},
+        projects=projects,
         environments=list(sraw.get("environments", []) or []),
         prod_environments=tuple(sraw.get("prod_environments", ["production", "prod"])),
         max_pages=int(sraw.get("max_pages", 40)),

@@ -40,8 +40,8 @@ def cmd_init(args):
     for p in skipped:
         print(f"skipped {p} (exists — use --force to overwrite)")
     if written:
-        print("\nNext: edit config.yaml (sentry.org, projects, categories, "
-              "codebase_path), then run `sentry-rice sync`.")
+        print("\nNext: edit config.yaml (sentry.org, projects with codebase_path per project, "
+              "categories), then run `sentry-rice sync`.")
 
 
 def cmd_initdb(args):

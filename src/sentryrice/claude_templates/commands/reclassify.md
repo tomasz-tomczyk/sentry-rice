@@ -3,14 +3,14 @@ description: Re-score every tracked issue from scratch against the current rubri
 ---
 
 Re-classify **all** tracked (unresolved) issues using the current rubric at
-`__RUBRIC_PATH__` — use this after editing the rubric or the categories in
-`__CONFIG_PATH__`, to roll the new guidance across the whole dataset. This does
+`rubric.md` — use this after editing the rubric or the categories in
+`config.yaml`, to roll the new guidance across the whole dataset. This does
 NOT re-import from Sentry (run `/reimport` for that).
 
 1. **Dump every unresolved issue** (not just unscored):
 
    ```bash
-   __RICE_BIN__ --config __CONFIG_PATH__ dump --all /tmp/unscored.json
+   .venv/bin/sentry-rice --config config.yaml dump --all /tmp/unscored.json
    ```
 
    Report the count — this is how many sub-agents the next step spawns. Confirm
@@ -27,7 +27,7 @@ NOT re-import from Sentry (run `/reimport` for that).
 3. **Renormalise** when it finishes:
 
    ```bash
-   __RICE_BIN__ --config __CONFIG_PATH__ recompute
+   .venv/bin/sentry-rice --config config.yaml recompute
    ```
 
 4. Restart the web UI if running, and report how the ranking shifted.

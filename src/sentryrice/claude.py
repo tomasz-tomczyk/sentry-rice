@@ -2,6 +2,7 @@
 substituting concrete paths from the loaded config. Claude Code reads Markdown /
 JS directly (it doesn't parse your YAML), so we bake the paths in at init time.
 """
+import json
 import os
 import sys
 
@@ -24,9 +25,14 @@ def _substitutions(config, config_path):
     rice_bin = os.path.join(os.path.dirname(sys.executable), "sentry-rice")
     if not os.path.exists(rice_bin):
         rice_bin = "sentry-rice"   # fall back to PATH if not found next to python
+    fallback = "/absolute/path/to/your/repo"
+    codebase_map = {
+        proj["name"]: proj["codebase_path"] or fallback
+        for proj in config.sentry.projects.values()
+    }
     return {
         "__PROJECT_NAME__": config.project.name,
-        "__CODEBASE_PATH__": config.project.codebase_path or "/absolute/path/to/your/repo",
+        "__CODEBASE_MAP__": json.dumps(codebase_map),
         "__RUBRIC_PATH__": config.rubric_path(),
         "__CONFIG_PATH__": os.path.abspath(config_path),
         "__DB_PATH__": config.db_path,

@@ -9,7 +9,7 @@ export const meta = {
 
 // Paths baked in by `sentry-rice init-claude` from your config.
 const RUBRIC = '__RUBRIC_PATH__'
-const CODEBASE = '__CODEBASE_PATH__'
+const CODEBASE_MAP = __CODEBASE_MAP__  // {app: codebase_path} — one entry per Sentry project
 const CONFIG = '__CONFIG_PATH__'
 const RICE = '__RICE_BIN__'
 const UPSERT = `${RICE} --config ${CONFIG} upsert`
@@ -31,10 +31,11 @@ if (!issues.length) throw new Error(`no issues loaded from ${LIST}`)
 
 function buildPrompt(it) {
   const scoreFile = `/tmp/score-${it.sentry_id}.json`
+  const codebase = CODEBASE_MAP[it.app] || Object.values(CODEBASE_MAP)[0] || '/absolute/path/to/your/repo'
   return `Score ONE Sentry issue for the RICE tool.
 
 1. Read the canonical scoring rubric at ${RUBRIC} and follow it exactly.
-2. Trace this issue into the codebase at ${CODEBASE} (Grep/Glob/Read there).
+2. Trace this issue into the codebase at ${codebase} (Grep/Glob/Read there).
 3. Persist your result to ${scoreFile}, then run this command and confirm it prints a line starting with "Upserted":
    ${UPSERT} < ${scoreFile}
 
