@@ -43,6 +43,45 @@ def test_init_scaffolds_and_does_not_clobber(tmp_path):
     assert len(written3) == 2
 
 
+def test_cli_upsert_missing_field_exits_nonzero(config_path, tmp_path, monkeypatch, capsys):
+    """upsert with a payload missing a required field exits non-zero and prints a
+    clear message to stderr — no raw traceback."""
+    monkeypatch.setenv("RICE_DB_PATH", str(tmp_path / "rice.db"))
+    main(["--config", config_path, "initdb"])
+
+    bad = {
+        "sentry_id": "CLI-BAD", "title": "boom", "url": "u",
+        # missing: confidence, effort, impact_category
+    }
+    p = tmp_path / "bad.json"
+    p.write_text(json.dumps(bad))
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--config", config_path, "upsert", str(p)])
+    assert exc_info.value.code != 0
+    err = capsys.readouterr().err
+    assert "confidence" in err or "effort" in err or "impact_category" in err
+    assert "Traceback" not in err
+
+
+def test_cli_upsert_malformed_json_exits_nonzero(config_path, tmp_path, monkeypatch, capsys):
+    """upsert with malformed JSON exits non-zero with a clear stderr message."""
+    monkeypatch.setenv("RICE_DB_PATH", str(tmp_path / "rice.db"))
+    main(["--config", config_path, "initdb"])
+
+    p = tmp_path / "broken.json"
+    p.write_text("{not valid json}")
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--config", config_path, "upsert", str(p)])
+    assert exc_info.value.code != 0
+    err = capsys.readouterr().err
+    assert "JSON" in err or "json" in err
+    assert "Traceback" not in err
+
+
 def test_cli_initdb_then_upsert_roundtrips(config_path, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("RICE_DB_PATH", str(tmp_path / "rice.db"))
     main(["--config", config_path, "initdb"])

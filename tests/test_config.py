@@ -32,6 +32,8 @@ def test_defaults_applied_when_omitted(tmp_path, monkeypatch):
         sentry:
           org: o
           projects: { "1": api }
+          environments:
+            - { query: production, store: production }
         categories:
           x: { score: 5 }
     """))
@@ -53,23 +55,51 @@ def test_missing_org_raises(tmp_path):
 
 def test_missing_categories_raises(tmp_path):
     p = tmp_path / "c.yaml"
-    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\n")
+    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\n  environments:\n    - { query: production, store: production }\n")
     with pytest.raises(ValueError, match="categories"):
         load_config(str(p))
 
 
 def test_category_score_out_of_range_raises(tmp_path):
     p = tmp_path / "c.yaml"
-    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\ncategories:\n  x: { score: 99 }\n")
+    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\n  environments:\n    - { query: production, store: production }\ncategories:\n  x: { score: 99 }\n")
     with pytest.raises(ValueError, match="0–10"):
         load_config(str(p))
+
+
+def test_missing_environments_raises(tmp_path):
+    # An empty/absent environments list would make collect_window return an empty
+    # window, and sync_all's prune_stale would then delete every tracked issue.
+    p = tmp_path / "c.yaml"
+    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\ncategories:\n  x: { score: 5 }\n")
+    with pytest.raises(ValueError, match="environments"):
+        load_config(str(p))
+
+
+def test_scalar_prod_environments_wrapped_not_exploded(tmp_path, monkeypatch):
+    monkeypatch.setenv("RICE_DB_PATH", str(tmp_path / "rice.db"))
+    p = tmp_path / "c.yaml"
+    p.write_text(textwrap.dedent("""
+        sentry:
+          org: o
+          projects: { "1": api }
+          environments:
+            - { query: production, store: production }
+          prod_environments: prod
+        categories:
+          x: { score: 5 }
+    """))
+    cfg = load_config(str(p))
+    # A bare string must be wrapped into a one-element tuple, not exploded into
+    # ('p','r','o','d').
+    assert cfg.sentry.prod_environments == ("prod",)
 
 
 def test_relative_db_path_resolves_against_config_dir(tmp_path, monkeypatch):
     monkeypatch.delenv("RICE_DB_PATH", raising=False)
     p = tmp_path / "sub" / "c.yaml"
     p.parent.mkdir()
-    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\ncategories:\n  x: { score: 5 }\ndb:\n  path: db/rice.db\n")
+    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\n  environments:\n    - { query: production, store: production }\ncategories:\n  x: { score: 5 }\ndb:\n  path: db/rice.db\n")
     cfg = load_config(str(p))
     # Resolved against the config dir (…/sub), not the test's CWD.
     assert cfg.db_path == str(tmp_path / "sub" / "db" / "rice.db")
@@ -78,6 +108,6 @@ def test_relative_db_path_resolves_against_config_dir(tmp_path, monkeypatch):
 def test_db_path_env_override_wins(tmp_path, monkeypatch):
     monkeypatch.setenv("RICE_DB_PATH", "/tmp/override-rice.db")
     p = tmp_path / "c.yaml"
-    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\ncategories:\n  x: { score: 5 }\ndb:\n  path: /tmp/ignored.db\n")
+    p.write_text("sentry:\n  org: o\n  projects: { '1': api }\n  environments:\n    - { query: production, store: production }\ncategories:\n  x: { score: 5 }\ndb:\n  path: /tmp/ignored.db\n")
     cfg = load_config(str(p))
     assert cfg.db_path == "/tmp/override-rice.db"

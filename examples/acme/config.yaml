@@ -27,6 +27,7 @@ thresholds:
     staging: 0        # low-traffic: import everything
     dev: 0
   reference_floor: 10
+  # recency_floor: 0.0    # minimum reach multiplier after recency decay (default: 0.0)
   recency_decay:
     - [3, 1.0]
     - [7, 0.9]

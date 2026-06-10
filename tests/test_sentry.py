@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import sentryrice.sentry as sentry
@@ -26,6 +27,80 @@ def test_parse_next_cursor():
     link2 = '<https://x/?cursor=0:100:0>; rel="next"; results="false"; cursor="0:100:0"'
     assert _parse_next_cursor(link2) is None
     assert _parse_next_cursor(None) is None
+
+
+def test_parse_next_cursor_extra_attributes_and_empty_cursor():
+    # Extra/reordered attributes must not confuse the regex.
+    link = ('<https://x/?cursor=0:200:0>; foo="bar"; rel="next"; results="true"; '
+            'cursor="0:200:0"; baz="qux"')
+    assert _parse_next_cursor(link) == "0:200:0"
+    # An empty cursor on the next rel is still a (degenerate) cursor value.
+    link2 = '<https://x/?cursor=>; rel="next"; results="true"; cursor=""'
+    assert _parse_next_cursor(link2) == ""
+    # Malformed header without a cursor attribute → no next.
+    assert _parse_next_cursor('<https://x/>; rel="next"; results="true"') is None
+
+
+def test_fetch_recent_issues_paginates_across_pages(config, monkeypatch):
+    # Two pages: the first carries a next cursor, the second does not.
+    pages = iter([
+        ([{"shortId": "A-1", "lastSeen": "2026-06-10T00:00:00Z", "count": 1}],
+         '<https://x/?cursor=0:100:0>; rel="next"; results="true"; cursor="0:100:0"'),
+        ([{"shortId": "A-2", "lastSeen": "2026-06-10T00:00:00Z", "count": 1}], None),
+    ])
+
+    class FakeResp:
+        def __init__(self, body, link):
+            self._body = json.dumps(body).encode()
+            self.headers = {"Link": link} if link else {}
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=60):
+        body, link = next(pages)
+        return FakeResp(body, link)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    out = sentry.fetch_recent_issues(config, "111", "tok", 7, environment="production")
+    assert [it["shortId"] for it in out] == ["A-1", "A-2"]
+
+
+def test_fetch_loop_retries_on_429(config, monkeypatch):
+    import urllib.error
+
+    calls = {"n": 0}
+    sleeps = []
+    monkeypatch.setattr(sentry.time, "sleep", lambda s: sleeps.append(s))
+
+    class FakeResp:
+        headers = {}
+
+        def read(self):
+            return json.dumps([{"shortId": "A-1", "lastSeen": "2026-06-10T00:00:00Z"}]).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=60):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {"Retry-After": "2"}, None)
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    out = sentry.fetch_recent_issues(config, "111", "tok", 7, environment="production")
+    assert [it["shortId"] for it in out] == ["A-1"]
+    assert calls["n"] == 2 and sleeps == [2]
 
 
 def test_import_window_stamps_first_scan_id_only_on_fresh_inserts(config):
@@ -103,6 +178,34 @@ def test_collect_window_stores_app_name_not_project_dict(config, monkeypatch):
     rec = window["production"]["API-1"]
     assert rec["app"] == "api"
     assert isinstance(rec["app"], str)
+
+
+def test_sync_all_reconciles_resolved_before_prune(config, monkeypatch):
+    # Two tracked issues. Both are still in the window (so prune keeps them), but
+    # Sentry now reports STILL-1 as resolved → sync_all should reflect that locally.
+    for sid in ("STILL-1", "DONE-1"):
+        _seed(config, sid)
+
+    def fake_window(cfg, token, days):
+        rec = lambda: {"app": "api", "title": "t", "url": "u", "user_count": 1,
+                       "event_count": 1, "last_seen": "2026-06-10T00:00:00Z"}
+        return {"production": {"STILL-1": rec(), "DONE-1": rec()}}
+
+    def fake_short_ids(cfg, project_id, query, token):
+        # "is:resolved" feed reports DONE-1 resolved on Sentry.
+        return {"DONE-1"} if "resolved" in query else set()
+
+    monkeypatch.setattr(sentry, "collect_window", fake_window)
+    monkeypatch.setattr(sentry, "fetch_short_ids", fake_short_ids)
+    monkeypatch.setattr("sentryrice.store.recompute_all", lambda cfg: 0)
+
+    result = sentry.sync_all(config, days=7, token="tok", log=lambda *a, **k: None)
+    assert result["reconcile"]["newly_resolved"] == 1
+    conn = connect(config.db_path)
+    statuses = dict(conn.execute("SELECT sentry_id, status FROM issues").fetchall())
+    conn.close()
+    assert statuses["DONE-1"] == "resolved"
+    assert statuses["STILL-1"] == "unresolved"
 
 
 def test_resolve_on_sentry_resolves_shortid_then_puts(config, monkeypatch):

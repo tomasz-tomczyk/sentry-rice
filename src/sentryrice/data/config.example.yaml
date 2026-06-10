@@ -35,6 +35,7 @@ thresholds:
     dev: 0
   # Guards against a near-empty dataset making its one issue an automatic 10.
   reference_floor: 10
+  # recency_floor: 0.0    # minimum reach multiplier after recency decay (default: 0.0)
   # Reach recency decay: [max_age_days, factor]; first match wins, older -> 0.
   recency_decay:
     - [3, 1.0]
@@ -53,7 +54,7 @@ categories:
   security:    { score: 9,  icon: shield-alert,  color: '#FF7738' }
   data:        { score: 9,  icon: database,      color: '#FF5C8A' }
   billing:     { score: 8,  icon: credit-card,   color: '#FFB454' }
-  integrations:{ score: 6,  icon: cable,         color: '#5C9DFF' }
+  integrations: { score: 6,  icon: cable,         color: '#5C9DFF' }
   ui_display:  { score: 5,  icon: monitor,       color: '#A396DA' }
   reporting:   { score: 4,  icon: bar-chart-3,   color: '#7BD389' }
   other:       { score: 3,  icon: shapes,        color: '#9AA0AA' }

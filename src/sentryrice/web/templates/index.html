@@ -322,10 +322,12 @@
   // Scoped to `root` so it can be re-run on just the swapped results after a live filter.
   // Marks rendered nodes so a re-run doesn't double-parse already-rendered HTML.
   function renderMarkdown(root) {
-    if (!window.marked) return;
+    if (!window.marked || !window.DOMPurify) return;
     marked.setOptions({ breaks: true, gfm: true });
     (root || document).querySelectorAll('.md:not([data-rendered])').forEach(function (el) {
-      el.innerHTML = marked.parse(el.textContent.trim());
+      // marked does NOT sanitize HTML; reasoning/findings derive from attacker-controlled
+      // Sentry data, so sanitize the parsed output before assigning innerHTML (stored-XSS guard).
+      el.innerHTML = DOMPurify.sanitize(marked.parse(el.textContent.trim()));
       el.setAttribute('data-rendered', '');
     });
   }

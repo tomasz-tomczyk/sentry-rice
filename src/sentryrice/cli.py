@@ -80,7 +80,16 @@ def cmd_recompute(args):
 def cmd_upsert(args):
     from sentryrice.store import upsert_score
     raw = open(args.path).read() if args.path else sys.stdin.read()
-    info = upsert_score(_load(args), json.loads(raw))
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"error: invalid JSON input — {exc}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        info = upsert_score(_load(args), payload)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"Upserted {info['sentry_id']} [{info['category']}/{info['app']}/"
           f"{info['environment']}] — RICE: {info['rice_score']:.2f}")
 

@@ -56,7 +56,8 @@ def test_override_saves_and_clears(client, config):
                        headers={"X-Requested-With": "fetch"})
     assert resp.status_code == 200 and resp.get_json()["eff_confidence"] == 9.5
     # Set back to AI value → override removed.
-    client.post(f"/issues/{iid}/override", data={"confidence": "7.0"})
+    client.post(f"/issues/{iid}/override", data={"confidence": "7.0"},
+                headers={"X-Requested-With": "fetch"})
     conn = sqlite3.connect(config.db_path)
     n = conn.execute("SELECT COUNT(*) FROM overrides WHERE issue_id=? AND field='confidence'",
                      (iid,)).fetchone()[0]
@@ -68,8 +69,48 @@ def test_override_out_of_range_rejected(client, config):
     conn = sqlite3.connect(config.db_path)
     iid = conn.execute("SELECT id FROM issues WHERE sentry_id='T-1'").fetchone()[0]
     conn.close()
-    assert client.post(f"/issues/{iid}/override", data={"reach": "11"}).status_code == 400
-    assert client.post(f"/issues/{iid}/override", data={"effort": "0"}).status_code == 400
+    hdr = {"X-Requested-With": "fetch"}
+    assert client.post(f"/issues/{iid}/override", data={"reach": "11"}, headers=hdr).status_code == 400
+    assert client.post(f"/issues/{iid}/override", data={"effort": "0"}, headers=hdr).status_code == 400
+
+
+def _iid(config):
+    conn = sqlite3.connect(config.db_path)
+    iid = conn.execute("SELECT id FROM issues WHERE sentry_id='T-1'").fetchone()[0]
+    conn.close()
+    return iid
+
+
+def test_override_requires_xrw_header(client, config):
+    iid = _iid(config)
+    # No X-Requested-With → CSRF guard rejects (a cross-origin form can't set it).
+    assert client.post(f"/issues/{iid}/override", data={"confidence": "9.5"}).status_code == 403
+    # With the header → works.
+    resp = client.post(f"/issues/{iid}/override", data={"confidence": "9.5"},
+                       headers={"X-Requested-With": "fetch"})
+    assert resp.status_code == 200
+
+
+def test_override_rejects_cross_origin(client, config):
+    iid = _iid(config)
+    # Header present but Origin host doesn't match the request host → 403.
+    resp = client.post(f"/issues/{iid}/override", data={"confidence": "9.5"},
+                       headers={"X-Requested-With": "fetch", "Origin": "https://evil.example"})
+    assert resp.status_code == 403
+
+
+def test_resolve_requires_xrw_header(client, config, monkeypatch):
+    monkeypatch.setattr(web, "read_token", lambda: "tok")
+    monkeypatch.setattr(web, "resolve_on_sentry", lambda cfg, sid, tok: "123")
+    iid = _iid(config)
+    # No header → 403, and the row must NOT be deleted.
+    assert client.post(f"/issues/{iid}/resolve").status_code == 403
+    conn = sqlite3.connect(config.db_path)
+    assert conn.execute("SELECT COUNT(*) FROM issues WHERE id=?", (iid,)).fetchone()[0] == 1
+    conn.close()
+    # With the header → works.
+    resp = client.post(f"/issues/{iid}/resolve", headers={"X-Requested-With": "fetch"})
+    assert resp.status_code == 200
 
 
 def test_new_badge_and_filter(client, config):

@@ -2,18 +2,30 @@
 urllib). Everything org/project/environment-specific comes from `Config`.
 
 Pipeline (see `sync_all`): collect the last-N-days window per environment for
-every project → open a scan → import new issues → refresh counts → prune issues
-no longer seen → recompute reach/RICE. Also marks issues resolved on Sentry.
+every project → open a scan → import new issues → refresh counts → reconcile
+local status against issues Sentry now reports resolved → prune issues no longer
+seen → recompute reach/RICE. Reconciliation only mirrors Sentry's state into the
+local DB; it never pushes status changes back to Sentry (that's `resolve_on_sentry`,
+driven from the web UI).
 
 Auth: `SENTRY_AUTH_TOKEN` env, else the `[auth] token` in ~/.sentryclirc.
 """
 import configparser
 import json
+import logging
 import os
+import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
+
+# A next page exists only when rel="next" AND results="true"; the cursor itself
+# is a quoted attribute that may sit anywhere among other attributes.
+_CURSOR_RE = re.compile(r'cursor="([^"]*)"')
 
 from sentryrice.config import Config
 from sentryrice.db import connect, init_db
@@ -65,16 +77,45 @@ def resolve_on_sentry(config: Config, short_id, token):
 
 
 def _parse_next_cursor(link_header):
-    """Sentry paginates via a Link header; return the next cursor if more results."""
+    """Sentry paginates via a Link header; return the next cursor if more results.
+
+    Robust to extra/reordered attributes: a part counts only when it carries both
+    rel="next" and results="true", and the cursor is pulled out with a regex rather
+    than positional string slicing."""
     if not link_header:
         return None
     for part in link_header.split(","):
         if 'rel="next"' in part and 'results="true"' in part:
-            for kv in part.split(";"):
-                kv = kv.strip()
-                if kv.startswith('cursor="'):
-                    return kv[len('cursor="'):-1]
+            m = _CURSOR_RE.search(part)
+            if m:
+                return m.group(1)
     return None
+
+
+_MAX_RETRY_AFTER = 60   # seconds — cap how long we'll honour a 429 Retry-After
+_MAX_429_RETRIES = 3    # bounded retries per request before giving up
+
+
+def _get_page(url, token):
+    """GET one page, returning ``(parsed_json, link_header)``. On HTTP 429 honour
+    the Retry-After header (capped at `_MAX_RETRY_AFTER`s) and retry with a small
+    bounded backoff instead of aborting the whole sync. Other HTTPErrors propagate
+    so callers (e.g. the 404 env handling) can react."""
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    for attempt in range(_MAX_429_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode()), resp.headers.get("Link")
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == _MAX_429_RETRIES:
+                raise
+            retry_after = (e.headers or {}).get("Retry-After")
+            try:
+                wait = min(float(retry_after), _MAX_RETRY_AFTER)
+            except (TypeError, ValueError):
+                wait = min(2 ** attempt, _MAX_RETRY_AFTER)
+            logger.warning("Sentry returned 429; retrying in %ss (attempt %d)", wait, attempt + 1)
+            time.sleep(wait)
 
 
 def fetch_short_ids(config: Config, project_id, query, token):
@@ -87,11 +128,7 @@ def fetch_short_ids(config: Config, project_id, query, token):
         params = {"project": project_id, "query": query, "limit": "100", "statsPeriod": "90d"}
         if cursor:
             params["cursor"] = cursor
-        req = urllib.request.Request(base + "?" + urllib.parse.urlencode(params),
-                                     headers={"Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            issues = json.loads(resp.read().decode())
-            link = resp.headers.get("Link")
+        issues, link = _get_page(base + "?" + urllib.parse.urlencode(params), token)
         for it in issues:
             sid = it.get("shortId")
             if sid:
@@ -99,6 +136,9 @@ def fetch_short_ids(config: Config, project_id, query, token):
         cursor = _parse_next_cursor(link)
         if not cursor:
             break
+    if cursor:
+        logger.warning("fetch_short_ids hit max_pages=%d for project %s with a next "
+                       "cursor still pending — results truncated", max_pages, project_id)
     return short_ids
 
 
@@ -117,12 +157,8 @@ def fetch_recent_issues(config: Config, project_id, token, days, environment=Non
             params["environment"] = environment
         if cursor:
             params["cursor"] = cursor
-        req = urllib.request.Request(base + "?" + urllib.parse.urlencode(params),
-                                     headers={"Authorization": f"Bearer {token}"})
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                issues = json.loads(resp.read().decode())
-                link = resp.headers.get("Link")
+            issues, link = _get_page(base + "?" + urllib.parse.urlencode(params), token)
         except urllib.error.HTTPError as e:
             # An environment that doesn't exist in this project 404s; treat it as
             # "no issues for that env" rather than failing the whole sync.
@@ -141,10 +177,15 @@ def fetch_recent_issues(config: Config, project_id, token, days, environment=Non
                 break
             out.append(it)
         if stop:
+            cursor = None   # deliberate early stop at the window edge, not truncation
             break
         cursor = _parse_next_cursor(link)
         if not cursor:
             break
+    if cursor:
+        logger.warning("fetch_recent_issues hit max_pages=%d for project %s env=%s with a "
+                       "next cursor still pending — results truncated", max_pages, project_id,
+                       environment)
     return out
 
 
@@ -271,8 +312,23 @@ def prune_stale(config: Config, seen_ids, keep_with_overrides=True):
         conn.close()
 
 
+def collect_resolved_short_ids(config: Config, token):
+    """Set of shortIds Sentry currently reports resolved, across every project.
+
+    Feeds `reconcile` so issues a human resolved on Sentry get mirrored locally
+    before prune. One `is:resolved` query per project is enough; environment
+    scoping isn't needed because resolution is per-issue, not per-env."""
+    resolved = set()
+    for pid in config.sentry.projects:
+        resolved |= fetch_short_ids(config, pid, "is:resolved", token)
+    return resolved
+
+
 def reconcile(config: Config, resolved_ids):
-    """Mark tracked issues resolved/unresolved based on the resolved id set."""
+    """Mirror Sentry's resolution state into the local DB: mark tracked issues
+    resolved when their shortId is in `resolved_ids`, otherwise unresolved.
+
+    This only updates local rows — it never pushes status back to Sentry."""
     init_db(config)
     conn = connect(config.db_path)
     try:
@@ -296,7 +352,11 @@ def reconcile(config: Config, resolved_ids):
 
 def sync_all(config: Config, days=None, token=None, log=print):
     """Full sync pipeline. Returns a summary dict. `log` is called with progress
-    strings (the CLI passes print; tests can pass a collector)."""
+    strings (the CLI passes print; tests can pass a collector).
+
+    Order matters: reconcile local status against Sentry's resolved set BEFORE
+    pruning, so a resolved issue is recorded as resolved rather than silently
+    dropped if it also fell out of the window."""
     from sentryrice.store import recompute_all
 
     days = days or config.thresholds.sync_days
@@ -317,6 +377,11 @@ def sync_all(config: Config, days=None, token=None, log=print):
     ref = refresh_from_window(config, window)
     log(f"Stats refresh: refreshed={ref['refreshed']}")
 
+    resolved_ids = collect_resolved_short_ids(config, token)
+    rec = reconcile(config, resolved_ids)
+    log(f"Reconcile (Sentry-resolved): newly_resolved={rec['newly_resolved']}  "
+        f"reopened={rec['reopened']}  total_resolved={rec['total_resolved']}")
+
     pr = prune_stale(config, seen_ids)
     log(f"Prune (not seen in {days}d): deleted={pr['deleted']}  "
         f"kept_with_overrides={pr['kept_protected']}  remaining={pr['remaining']}")
@@ -324,4 +389,4 @@ def sync_all(config: Config, days=None, token=None, log=print):
     n = recompute_all(config)
     log(f"Recomputed reach + RICE for {n} scored issues.")
     return {"scan_id": scan_id, "window": seen_by_env, "import": imp,
-            "refresh": ref, "prune": pr, "recomputed": n}
+            "refresh": ref, "reconcile": rec, "prune": pr, "recomputed": n}

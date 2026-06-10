@@ -59,11 +59,15 @@ pip install sentry-rice
 sentry-rice init
 $EDITOR config.yaml      # set sentry.org, projects, categories, codebase_path
 
-# 2. Pull issues from Sentry (creates the DB, imports, scores reach/RICE)
-export SENTRY_AUTH_TOKEN=...        # or rely on ~/.sentryclirc
+# 2. Set your Sentry auth token (read scope is enough for sync;
+#    write scope needed to resolve issues from the UI).
+export SENTRY_AUTH_TOKEN=sntrys_...   # create at https://sentry.io/settings/account/api/auth-tokens/
+# Alternative: store token = <value> under [auth] in ~/.sentryclirc
+
+# 3. Pull issues from Sentry (creates the DB, imports, scores reach/RICE)
 sentry-rice --config config.yaml sync
 
-# 3. Browse
+# 4. Browse
 sentry-rice --config config.yaml serve      # http://127.0.0.1:5001
 ```
 

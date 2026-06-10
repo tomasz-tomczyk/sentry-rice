@@ -55,6 +55,34 @@ def test_recompute_all_redecays_reach(config):
     assert reach == 5.0   # sole issue → ref=itself → base 10 × 0.5 recency
 
 
+def test_upsert_missing_required_field_raises_valueerror(config):
+    """A payload missing any required field raises ValueError naming the field(s),
+    and no partial row is written to the DB."""
+    from sentryrice.db import init_db
+    init_db(config)  # ensure tables exist so we can assert counts
+
+    for missing_key in ("sentry_id", "title", "url", "confidence", "effort", "impact_category"):
+        p = _payload()
+        del p[missing_key]
+        with pytest.raises(ValueError, match=missing_key):
+            upsert_score(config, p)
+    # DB must remain empty — no partial rows from any of the above attempts.
+    conn = connect(config.db_path)
+    assert conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM scores").fetchone()[0] == 0
+    conn.close()
+
+
+def test_upsert_multiple_missing_fields_all_named(config):
+    """When several required fields are absent, the error names all of them."""
+    p = {"impact_category": "billing"}  # missing sentry_id, title, url, confidence, effort
+    with pytest.raises(ValueError) as exc_info:
+        upsert_score(config, p)
+    msg = str(exc_info.value)
+    for field in ("sentry_id", "title", "url", "confidence", "effort"):
+        assert field in msg
+
+
 def test_dump_issues_unscored_vs_all(config, tmp_path):
     upsert_score(config, _payload(sentry_id="SCORED-1"))
     # An unscored issue (no score row).

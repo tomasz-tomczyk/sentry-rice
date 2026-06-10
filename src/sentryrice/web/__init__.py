@@ -4,8 +4,9 @@ overrides, resolve, disagreements and about pages — every opinionated bit
 """
 import sqlite3
 from datetime import datetime
+from urllib.parse import urlparse
 
-from flask import Flask, request, render_template, redirect, url_for, jsonify
+from flask import Flask, request, render_template, redirect, url_for, jsonify, abort
 
 from sentryrice.config import Config
 from sentryrice.db import connect
@@ -52,6 +53,18 @@ def create_app(config: Config) -> Flask:
     def wants_json():
         return (request.headers.get("X-Requested-With") == "fetch"
                 or "application/json" in request.headers.get("Accept", ""))
+
+    def require_same_origin():
+        """CSRF guard for state-changing POSTs. A cross-origin HTML <form> cannot
+        set a custom request header, so requiring X-Requested-With blocks it; we
+        also reject when the Origin/Referer host doesn't match the request host.
+        Aborts with 403 on failure."""
+        if request.headers.get("X-Requested-With") != "fetch":
+            abort(403)
+        origin = request.headers.get("Origin") or request.headers.get("Referer")
+        if origin:
+            if urlparse(origin).netloc != request.host:
+                abort(403)
 
     # ── Template filters ────────────────────────────────────────────────────────
     @app.template_filter("score_color")
@@ -194,16 +207,18 @@ def create_app(config: Config) -> Flask:
             ORDER BY {sort} {order}
         """
         conn = get_db()
-        issues = conn.execute(query, params).fetchall()
-        apps = [r[0] for r in conn.execute(
-            "SELECT DISTINCT app FROM issues WHERE app IS NOT NULL ORDER BY app").fetchall()]
-        environments = [r[0] for r in conn.execute(
-            "SELECT DISTINCT environment FROM issues WHERE environment IS NOT NULL "
-            "ORDER BY environment").fetchall()]
-        category_list = [r[0] for r in conn.execute(
-            "SELECT impact_category FROM scores GROUP BY impact_category ORDER BY MAX(impact) DESC"
-        ).fetchall()]
-        conn.close()
+        try:
+            issues = conn.execute(query, params).fetchall()
+            apps = [r[0] for r in conn.execute(
+                "SELECT DISTINCT app FROM issues WHERE app IS NOT NULL ORDER BY app").fetchall()]
+            environments = [r[0] for r in conn.execute(
+                "SELECT DISTINCT environment FROM issues WHERE environment IS NOT NULL "
+                "ORDER BY environment").fetchall()]
+            category_list = [r[0] for r in conn.execute(
+                "SELECT impact_category FROM scores GROUP BY impact_category ORDER BY MAX(impact) DESC"
+            ).fetchall()]
+        finally:
+            conn.close()
 
         fix_prompts = {r["id"]: _fix_prompt(config, r) for r in issues}
         template = "_table.html" if request.args.get("partial") else "index.html"
@@ -216,6 +231,7 @@ def create_app(config: Config) -> Flask:
 
     @app.route("/issues/<int:issue_id>/override", methods=["POST"])
     def override(issue_id):
+        require_same_origin()
         reason = request.form.get("reason", "")
         provided = {}
         for field in OVERRIDE_FIELDS:
@@ -278,6 +294,7 @@ def create_app(config: Config) -> Flask:
 
     @app.route("/issues/<int:issue_id>/resolve", methods=["POST"])
     def resolve_issue(issue_id):
+        require_same_origin()
         conn = get_db()
         row = conn.execute("SELECT sentry_id FROM issues WHERE id=?", (issue_id,)).fetchone()
         if row is None:
@@ -306,12 +323,14 @@ def create_app(config: Config) -> Flask:
     @app.route("/disagreements")
     def disagreements():
         conn = get_db()
-        rows = conn.execute("""
-            SELECT i.title, i.url, o.field, o.ai_value, o.your_value, o.reason, o.created_at
-            FROM overrides o JOIN issues i ON i.id = o.issue_id
-            ORDER BY o.created_at DESC
-        """).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute("""
+                SELECT i.title, i.url, o.field, o.ai_value, o.your_value, o.reason, o.created_at
+                FROM overrides o JOIN issues i ON i.id = o.issue_id
+                ORDER BY o.created_at DESC
+            """).fetchall()
+        finally:
+            conn.close()
         return render_template("disagreements.html", rows=rows)
 
     @app.route("/about")

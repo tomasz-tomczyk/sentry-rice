@@ -139,7 +139,7 @@
                            hover:border-sentry-purple hover:text-sentry-purplelt hover:bg-sentry-purple/10 transition-colors">
               <i data-lucide="clipboard-copy" class="w-4 h-4"></i>
             </button>
-            <button onclick="event.stopPropagation(); resolveIssue({{ issue.id }}, '{{ issue.sentry_id }}', this)"
+            <button onclick="event.stopPropagation(); resolveIssue({{ issue.id }}, {{ issue.sentry_id | tojson }}, this)"
                     title="Resolve on Sentry & remove from this list"
                     class="inline-flex items-center text-sentry-text2 border border-sentry-borderlt rounded-md px-2 py-1 bg-transparent
                            hover:border-sentry-green hover:text-sentry-green hover:bg-sentry-green/10 transition-colors">

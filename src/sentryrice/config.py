@@ -114,6 +114,19 @@ def _require(d: dict, key: str, ctx: str):
     return d[key]
 
 
+def _as_list(value, ctx: str) -> list:
+    """Coerce a YAML scalar into a one-element list. A bare string like
+    ``prod_environments: prod`` must become ``['prod']``, not the character
+    sequence ``['p','r','o','d']`` you'd get from ``list('prod')``."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    raise ValueError(f"config: '{ctx}' must be a list or a single string (got {type(value).__name__})")
+
+
 def load_config(path: str) -> Config:
     """Load and validate a sentry-rice YAML config into a `Config`."""
     path = os.path.abspath(os.path.expanduser(path))
@@ -143,12 +156,18 @@ def load_config(path: str) -> Config:
         org=_require(sraw, "org", "sentry."),
         region_url=sraw.get("region_url", "https://us.sentry.io").rstrip("/"),
         projects=projects,
-        environments=list(sraw.get("environments", []) or []),
-        prod_environments=tuple(sraw.get("prod_environments", ["production", "prod"])),
+        environments=_as_list(sraw.get("environments"), "sentry.environments"),
+        prod_environments=tuple(_as_list(
+            sraw.get("prod_environments", ["production", "prod"]), "sentry.prod_environments")),
         max_pages=int(sraw.get("max_pages", 40)),
     )
     if not sentry.projects:
         raise ValueError("config: 'sentry.projects' must list at least one project id → app")
+    if not sentry.environments:
+        # An empty window from collect_window would make sync_all's prune_stale
+        # delete every tracked issue and its scores — refuse to load.
+        raise ValueError(
+            "config: 'sentry.environments' must list at least one {query, store} entry")
     for e in sentry.environments:
         if "query" not in e or "store" not in e:
             raise ValueError("config: each sentry.environments entry needs 'query' and 'store'")

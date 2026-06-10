@@ -10,11 +10,20 @@ from sentryrice.db import connect, init_db, reference_volumes, references_for
 from sentryrice.scoring import compute_reach, compute_rice
 
 
+_REQUIRED_KEYS = ("sentry_id", "title", "url", "impact_category", "confidence", "effort")
+
+
 def upsert_score(config: Config, payload: dict) -> dict:
     """Insert/update one issue + its score. Reach and RICE are computed here from
     the issue's volume/recency (env-relative); any `reach` in the payload is
     ignored. Impact is fixed by the issue's category. Returns the stored row info.
     """
+    missing = [k for k in _REQUIRED_KEYS if k not in payload]
+    if missing:
+        raise ValueError(
+            f"score payload missing required field(s): {', '.join(missing)}"
+        )
+
     category = payload["impact_category"]
     scores = config.category_scores()
     if category not in scores:
