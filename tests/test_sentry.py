@@ -88,6 +88,23 @@ def test_fetch_recent_issues_swallows_404_for_unknown_env(config, monkeypatch):
         sentry.fetch_recent_issues(config, "111", "tok", 7)
 
 
+def test_collect_window_stores_app_name_not_project_dict(config, monkeypatch):
+    # load_config normalises every project to {"name": ..., "codebase_path": ...},
+    # so collect_window must store the app *name* string, not the whole dict —
+    # otherwise the dict reaches the SQLite bind in import_window and blows up.
+    def fake_fetch(cfg, pid, token, days, environment=None):
+        if pid != "111" or environment != "production":
+            return []
+        return [{"shortId": "API-1", "title": "boom", "permalink": "https://x/1",
+                 "userCount": 3, "count": 42, "lastSeen": "2026-06-10T00:00:00Z"}]
+
+    monkeypatch.setattr(sentry, "fetch_recent_issues", fake_fetch)
+    window = sentry.collect_window(config, "tok", 7)
+    rec = window["production"]["API-1"]
+    assert rec["app"] == "api"
+    assert isinstance(rec["app"], str)
+
+
 def test_resolve_on_sentry_resolves_shortid_then_puts(config, monkeypatch):
     calls = []
 

@@ -8,7 +8,10 @@ from sentryrice.config import load_config
 def test_loads_minimal_config(config):
     assert config.project.name == "Test Project"
     assert config.sentry.org == "test-org"
-    assert config.sentry.projects == {"111": "api", "222": "web"}
+    assert config.sentry.projects == {
+        "111": {"name": "api", "codebase_path": "/tmp/fake-repo"},
+        "222": {"name": "web", "codebase_path": ""},
+    }
     assert config.category_scores()["billing"] == 8
     assert config.thresholds.sync_days == 7
     assert config.thresholds.rice_high == 40 and config.thresholds.rice_medium == 15

@@ -7,12 +7,11 @@ import pytest
 MINIMAL_YAML = """
 project:
   name: "Test Project"
-  codebase_path: /tmp/fake-repo
   rubric_file: rubric.md
 sentry:
   org: test-org
   projects:
-    "111": api
+    "111": { name: api, codebase_path: /tmp/fake-repo }
     "222": web
   environments:
     - { query: production, store: production }

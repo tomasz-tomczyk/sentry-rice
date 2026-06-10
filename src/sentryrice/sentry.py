@@ -156,13 +156,14 @@ def collect_window(config: Config, token, days):
     fold into one stored env, keeping whichever sighting has more events."""
     window = {}
     for pid, app in config.sentry.projects.items():
+        app_name = app["name"] if isinstance(app, dict) else app
         for q_env, stored_env in config.env_queries():
             for it in fetch_recent_issues(config, pid, token, days, environment=q_env):
                 sid = it.get("shortId")
                 if not sid:
                     continue
                 rec = {
-                    "app": app,
+                    "app": app_name,
                     "title": it.get("title") or it.get("culprit") or sid,
                     "url": it.get("permalink") or f"{config.sentry.region_url}/issues/{sid}/",
                     "user_count": int(it.get("userCount") or 0),
